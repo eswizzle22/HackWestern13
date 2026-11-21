@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f7f1" />
+    <title>CircaAir — Environmental Health Guardian</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script>
+      window.CIRCAAIR_AUTH0_CONFIG = {
+        domain: "YOUR_AUTH0_DOMAIN",
+        clientId: "YOUR_AUTH0_CLIENT_ID"
+      };
+    </script>
+    <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="toast-region" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

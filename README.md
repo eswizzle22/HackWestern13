@@ -10,13 +10,30 @@ A dependency-free browser prototype based on the CircaAir project brief. It incl
 
 ## Run locally
 
-Open `index.html` in a browser, or serve the folder with any static file server:
+Create `.env` once:
 
 ```powershell
-python -m http.server 8000
+Copy-Item .env.example .env
 ```
 
-Then visit `http://localhost:8000`.
+Open `.env` and set `GEMINI_API_KEY`. The key is read automatically by `server.js`.
+In VS Code, press `F5` and choose **Run CircaAir**. No terminal environment setup is required.
+
+Start the Node server:
+
+```powershell
+$env:GEMINI_API_KEY = "your-server-side-key"
+npm start
+```
+
+If npm is blocked by your PowerShell execution policy, run the server directly:
+
+```powershell
+$env:GEMINI_API_KEY = "your-server-side-key"
+node server.js
+```
+
+Then visit `http://127.0.0.1:8000`. `/api/health` reports whether Gemini is configured.
 
 ## Auth0 setup
 
@@ -26,3 +43,48 @@ The prototype includes a polished Auth0-ready login page and demo fallback.
 2. Add `http://localhost:8000` as an allowed callback URL, allowed logout URL, and allowed web origin.
 3. In `index.html`, replace `YOUR_AUTH0_DOMAIN` and `YOUR_AUTH0_CLIENT_ID` in `CIRCAAIR_AUTH0_CONFIG`.
 4. Refresh the app. Use **Continue with Auth0** for the secure flow or **Explore the demo** to browse locally.
+
+## Insight engine
+
+The prototype uses simulated 7-day sensor history plus seeded symptom logs for the correlation engine:
+
+- Lookback window: 2 hours
+- Minimum logs: 5
+- Minimum displayed confidence: 60%
+- Symptom severity: 1–5
+- Air threshold: 120 ppm rise
+- Bright-light threshold: 600 lux
+- Wind-down threshold: 200 lux after 8 PM
+
+These values are calculated from the in-browser simulated data. Correlations are observations, not evidence of medical causation.
+
+## Safe Gemini integration
+
+Gemini credentials must remain on a server. Set `window.CIRCAAIR_GEMINI_CONFIG` only to enable a same-origin server proxy; never put an API key in `index.html` or `app.js`.
+
+The browser sends only a JSON context containing symptom names, severity bands, environmental bands, time-of-day band, and an optional correlation confidence band. It does not send names, account IDs, exact timestamps, locations, or raw logs.
+
+The proxy should accept `POST` JSON:
+
+```json
+{
+  "context": {
+    "symptoms": [{ "symptom": "Headache", "severityBand": "moderate" }],
+    "environment": { "airBand": "moderate", "lightBand": "bright", "timeOfDayBand": "daytime" },
+    "correlation": { "label": "Air quality rise", "confidenceBand": "medium" }
+  },
+  "instructions": "..."
+}
+```
+
+It should return only:
+
+```json
+{
+  "intervention": "Short dashboard title",
+  "detail": "Short explanatory sentence",
+  "notification": "Short notification copy"
+}
+```
+
+If the endpoint is disabled, times out, returns an error, or returns malformed copy, the app uses local fallback suggestions.

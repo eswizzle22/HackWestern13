@@ -14,6 +14,12 @@
         domain: "dev-k8441d8ljzg51clv.us.auth0.com",
         clientId: "DE4vYNzuN8KqhFS2gTF4aYBSdHZvIvo7"
       };
+      // Gemini is called only through a server-side proxy.
+      // Never place a Gemini API key in this browser configuration.
+      window.CIRCAAIR_GEMINI_CONFIG = {
+        enabled: true,
+        endpoint: "/api/gemini-copy"
+      };
     </script>
     <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
   </head>

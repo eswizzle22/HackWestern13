@@ -25,7 +25,7 @@ BACKEND_URL = os.environ.get("PRODROME_BACKEND_URL", "").rstrip("/")
 DEVICE_KEY = os.environ.get("PRODROME_DEVICE_KEY", "")
 DEVICE_ID = os.environ.get("PRODROME_DEVICE_ID", "CA-0018")
 
-AIR_BASELINE = 0
+AIR_BASELINE = 16.4
 
 latest_record = None
 record_lock = threading.Lock()

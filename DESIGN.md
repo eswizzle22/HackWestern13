@@ -1,8 +1,8 @@
-# CircaAir Design System & UI Spec
+# Prodrome Design System & UI Spec
 
 Use this file to apply branding and a design system to the existing bare-bones screens. Do not change app logic or data flow. Only change layout, styling, components, copy, and icons as described here.
 
-"CircaAir" is a working name. Keep it in one constant so it can be swapped later.
+"Prodrome" is a working name. Keep it in one constant so it can be swapped later.
 
 ---
 
@@ -65,7 +65,7 @@ Two weights only: **Regular (400)** and **Bold (700)**.
 | Onboarding question | Bold | 32px, -0.02em | "What do you want help with?" |
 | Modal question | Bold | 24px, -0.01em | "What symptom are you experiencing?" |
 | Big data number | Regular | 56px | "800" |
-| Modal title, wordmark | Regular | 26px | "Log a symptom", "CircaAir" |
+| Modal title, wordmark | Regular | 26px | "Log a symptom", "Prodrome" |
 | Section label (above cards) | Regular | 24px | "Lighting", "How your space has felt" |
 | Status word in cards | Regular | 24px | "Good" |
 | Hero banner message | Regular | 26px, lavender | "A great time for deep work" |
@@ -113,7 +113,7 @@ Status and labels are plain text, never inside pill-shaped badges or chips. The 
 
 - 8px spacing scale: 8, 16, 24, 32, 48, 64
 - **Desktop layout:** fixed left sidebar (240px) + main content (max 1100px)
-- Sidebar: "CircaAir" wordmark at top, nav links (Dashboard, Insights) about 120px below, Settings at the bottom
+- Sidebar: "Prodrome" wordmark at top, nav links (Dashboard, Insights) about 120px below, Settings at the bottom
 - Section labels sit **above** their card, outside it, with 16px gap
 - Cards: white fill, 1px `--line` outline, no shadow
 - Generous padding inside cards: 32px
@@ -505,7 +505,7 @@ Progress squares at the top. Every step has "Skip" (secondary) and "Next →" (p
 4. **When do you usually wind down?** *(time dial, shows night window)*
 5. **Pair your device** *(enter the 4-character code shown on the device, or "Skip, I'll do it later")*
 
-Final screen: spiral animates from dot to full, with "You're set. CircaAir will get to know you as you log how you feel." Primary button "Go to dashboard".
+Final screen: spiral animates from dot to full, with "You're set. Prodrome will get to know you as you log how you feel." Primary button "Go to dashboard".
 
 ### Log a symptom (3 steps, modal)
 
@@ -526,7 +526,7 @@ Then the modal closes and the toast appears. Skip on steps 2 and 3 still logs th
 ### `/` Landing & login
 - Wordmark top left
 - Large bold headline: "Catch invisible air and light triggers before they catch you"
-- Supporting line: "CircaAir quietly tracks the air and light in your room and helps you see what's behind headaches, brain fog, and bad sleep."
+- Supporting line: "Prodrome quietly tracks the air and light in your room and helps you see what's behind headaches, brain fog, and bad sleep."
 - Green banner with the spiral animating from dot to full
 - "Get started" (primary) and "Sign in" (secondary)
 

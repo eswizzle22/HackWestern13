@@ -160,7 +160,7 @@ const api = () => window.ProdromeBackend;
 const currentUserId = () => state.user && state.user.sub;
 
 function defaultLive() {
-  return { loaded: false, error: false, device: null, series: null, insights: null, busy: false, notifiedFor: null };
+  return { loaded: false, error: false, device: null, series: null, insights: null, symptoms: [], busy: false, notifiedFor: null, copy: null, copyStatus: "fallback", copyKey: "", copyAt: 0, copyBusy: false };
 }
 
 function defaultHistory() {
@@ -264,6 +264,7 @@ function dashboardPage() {
   const airNote = !latest ? "No reading yet" : latest.airBand === "good" ? "Comfortable for focus" : latest.airBand === "caution" ? "Getting a little stale" : "Stale, fresh air might help";
   const lightNote = !latest ? "No reading yet" : latest.lightBand === "good" ? "Comfortable for focus" : latest.lightBand === "dim" ? "On the dim side" : "On the bright side";
   const bars = (key, max) => ((series && series.points) || []).slice(-9).map(point => `<i style="--n:${Math.min(7, Math.max(1, Math.round((point[key] / max) * 7)))}"></i>`).join("");
+  const suggestion = currentSuggestion();
   const hour = new Date().getHours();
   const daypart = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
 
@@ -288,7 +289,7 @@ function dashboardPage() {
     </section>
     <section class="section-head chart-head"><div><h3>How your space has felt</h3></div><div class="range-tabs">${["15m", "6h", "24h", "7d"].map(range => `<button class="${state.selectedRange === range ? "selected" : ""}" data-range="${range}">${range}</button>`).join("")}</div></section>
     <section class="chart-card"><div class="chart-legend"><span><i class="legend-air"></i> Air quality</span><span><i class="legend-light"></i> Lighting</span></div><div class="chart">${trendChart({ points: series && series.points, from: series && series.from, to: series && series.to, labelDays: state.selectedRange === "7d" })}</div></section>
-    ${online && latest.airBand === "good" && latest.lightBand === "good" ? `<aside class="intervention"><div class="intervention-icon">✦</div><div><h3>A great time for deep work</h3><p>Light is steady and the air is fresh, so this might be a good focus window.</p></div><button class="close-intervention" data-action="dismiss">×</button></aside>` : ""}`;
+    ${latest ? `<aside class="intervention" data-source="${suggestion.source}"><div class="intervention-icon">✦</div><div><h3>${escapeHtml(suggestion.intervention)}</h3><p>${escapeHtml(suggestion.detail)}</p></div><button class="close-intervention" data-action="dismiss">×</button></aside>` : ""}`;
 }
 
 // Redraws the page body in place (used when new data arrives) without rebuilding the sidebar or losing open dialogs.
@@ -320,18 +321,19 @@ const liveSignature = () => {
   return JSON.stringify([state.live.error, device && device.online, device && device.latest && device.latest.time, session && session.id, session && session.checkInDueAt, session ? Math.floor(Date.now() / 60000) : null]);
 };
 
-async function loadDashboard() {
+async function loadDashboard({ forceSuggestion = false } = {}) {
   if (!state.user) return;
   try {
     const id = currentUserId();
-    const [device, series, insights] = await Promise.all([api().getDevice(id), api().getReadings(id, state.selectedRange), api().getInsights(id)]);
+    const [device, series, insights, symptoms] = await Promise.all([api().getDevice(id), api().getReadings(id, state.selectedRange), api().getInsights(id), api().getSymptoms(id, { limit: 5 })]);
     applyDevice(device);
-    Object.assign(state.live, { loaded: true, error: false, series, insights });
+    Object.assign(state.live, { loaded: true, error: false, series, insights, symptoms: symptoms ? symptoms.symptoms : [] });
   } catch (error) {
     console.error("Loading live data failed:", error);
     Object.assign(state.live, { loaded: true, error: true });
   }
   repaint();
+  refreshSuggestion({ force: forceSuggestion });
 }
 
 // Every place that receives the device status goes through here, so a session that ended by itself is noticed.
@@ -371,6 +373,7 @@ async function refreshLive({ force = false } = {}) {
   }
   if (liveSignature() !== before && ["dashboard", "device"].includes(state.route)) repaint();
   else paintStatus();
+  if (liveSignature() !== before && state.route === "dashboard") refreshSuggestion();
 }
 
 // ---- Working session: Start/Stop, and the hourly "still working?" check-in ----
@@ -397,6 +400,7 @@ async function toggleWorking() {
   }
   live.busy = false;
   repaint();
+  refreshSuggestion({ force: true });
 }
 
 async function confirmWorking() {
@@ -559,6 +563,143 @@ async function loadMore(kind) {
   }
 }
 
+// ---- Suggestions from Gemini. A de-identified summary goes to the website server's proxy (which holds the API key);
+// if Gemini is off, slow or fails, a built-in suggestion is shown instead. ----
+const GEMINI_MIN_GAP_MS = 60 * 1000;
+const GEMINI_TIMEOUT_MS = 12 * 1000;
+const GEMINI_INSTRUCTIONS = "Write only short, general wellbeing interventions. Do not diagnose, infer identity, or claim medical causation.";
+const GEMINI_AIR = { good: "low", caution: "moderate", poor: "bad" };
+const GEMINI_LIGHT = { dim: "dim", good: "moderate", harsh: "harsh" };
+const GEMINI_DEVICE = { model: "Prodrome One", adcResolutionBits: 10, adcMaximum: 1023, sensors: { air: "Grove Air Quality Sensor v1.3 (qualitative analog)", light: "Grove Light Sensor (analog)" } };
+const capitalize = word => word.charAt(0).toUpperCase() + word.slice(1);
+
+// Only symptom names, severity bands, environment bands and thresholds. No name, id, time stamps or raw logs.
+function buildGeminiContext() {
+  const { device, insights, symptoms } = state.live;
+  const latest = device && device.latest;
+  const pattern = insights && insights.patterns && insights.patterns[0];
+  const hour = new Date().getHours();
+  const sensitivities = state.saved.environment ? state.survey.environment.sensitivities : null;
+  return {
+    symptoms: (symptoms || []).slice(0, 5).map(log => ({ symptom: symptomLabel(log.symptom), severityBand: log.severity === null ? "moderate" : log.severity <= 4 ? "mild" : log.severity <= 8 ? "moderate" : "high" })),
+    environment: {
+      airBand: latest ? GEMINI_AIR[latest.airBand] : "unknown",
+      lightBand: latest ? GEMINI_LIGHT[latest.lightBand] : "unknown",
+      timeOfDayBand: hour >= 20 ? "wind-down" : hour < 6 ? "night" : "daytime",
+    },
+    learningProfile: {
+      sensitivitySurveyCompleted: state.saved.environment,
+      sensitivities: sensitivities && { brightLight: capitalize(sensitivities.light), dimLight: capitalize(sensitivities.dim), stuffyAir: capitalize(sensitivities.air), odors: capitalize(sensitivities.voc) },
+      deviceSpecs: GEMINI_DEVICE,
+      thresholds: device && device.thresholds,
+    },
+    // Whether a work session is running and roughly how long, rounded to 15 minutes so the summary does not change every minute.
+    workSession: device && device.session ? { active: true, minutesWorking: Math.round(device.session.durationSeconds / 60 / 15) * 15 } : { active: false },
+    correlation: pattern ? {
+      label: pattern.title,
+      lookbackMinutes: 30,
+      minimumLogCount: insights.minimumLogs,
+      confidenceBand: pattern.strength === "strong" ? (pattern.rate >= 80 ? "high" : "medium") : "low",
+    } : null,
+  };
+}
+
+// The built-in suggestion: what the readings say now, else the strongest pattern found, else a nudge to keep logging.
+function fallbackCopy() {
+  const { device, insights } = state.live;
+  const latest = device && device.latest;
+  const top = insights && insights.patterns && insights.patterns[0];
+  if (latest && latest.airBand !== "good") {
+    return { intervention: "Fresh air might help", detail: "The air has gotten a bit stale. Opening a window could help when you get a chance.", notification: "Some fresh air might help when you get a chance." };
+  }
+  if (latest && latest.lightBand === "harsh") {
+    return { intervention: "Reduce glare and soften the light", detail: "Light is on the bright side. Some shade on the screen or window might help.", notification: "Lighting is bright; reducing glare or a short visual break might help." };
+  }
+  if (latest && latest.lightBand === "dim") {
+    return { intervention: "A little more light might help", detail: "Light is on the dim side, which can be harder on your eyes.", notification: "Light is on the dim side; a lamp might be easier on your eyes." };
+  }
+  if (top && top.trigger === "air") {
+    return { intervention: "Keep an eye on the air", detail: "Stale air has appeared around some logged symptoms, so a fresh-air break might be worth it.", notification: "Air has been linked to some of your symptoms; a window break might help." };
+  }
+  if (top && top.trigger === "harsh_light") {
+    return { intervention: "Watch the glare", detail: "Bright light has appeared around some logged symptoms.", notification: "Bright light has been linked to some of your symptoms; some shade might help." };
+  }
+  if (top && top.trigger === "long_session") {
+    return { intervention: "A short break might help", detail: "Long stretches without a break have appeared around some logged symptoms.", notification: "It might be a good moment for a short break." };
+  }
+  if (latest) {
+    return { intervention: "A great time for deep work", detail: "Light is steady and the air is fresh, so this might be a good focus window.", notification: "Great focus window: light and air are aligned right now." };
+  }
+  return { intervention: "Keep logging symptoms", detail: "A few more logs will help Prodrome find patterns.", notification: "No pattern yet. Keep your symptom log up to date." };
+}
+
+// What the card shows: Gemini's text while it still matches the situation, otherwise the built-in suggestion.
+function currentSuggestion() {
+  const live = state.live;
+  if (live.copyStatus === "generated" && live.copy && live.copyKey === JSON.stringify(buildGeminiContext())) return { ...live.copy, source: "gemini" };
+  return { ...fallbackCopy(), source: "local" };
+}
+
+function applySuggestionToNotifications() {
+  const suggestion = currentSuggestion();
+  if (state.notifications[1] && suggestion.intervention) {
+    state.notifications[1].title = suggestion.intervention;
+    state.notifications[1].message = suggestion.notification;
+  }
+}
+
+// Asks Gemini for fresh wording. Skipped while a request is running, when nothing changed, or within a minute of the last
+// request (unless forced after something the user did). Never throws: any failure leaves the built-in suggestion in place.
+async function refreshSuggestion({ force = false } = {}) {
+  const live = state.live;
+  applySuggestionToNotifications();
+  if (!live.device || !live.device.latest) return;
+  const config = window.PRODROME_GEMINI_CONFIG || {};
+  if (!config.enabled || !config.endpoint) return;
+  let endpoint;
+  try {
+    endpoint = new URL(config.endpoint, window.location.href);
+  } catch (error) {
+    return;
+  }
+  if (endpoint.origin !== window.location.origin) {
+    console.warn("Gemini proxy blocked: only same-origin endpoints are allowed.");
+    return;
+  }
+  const context = buildGeminiContext();
+  const key = JSON.stringify(context);
+  if (live.copyBusy || (live.copyStatus === "generated" && live.copyKey === key)) return;
+  if (!force && Date.now() - live.copyAt < GEMINI_MIN_GAP_MS) return;
+
+  live.copyBusy = true;
+  live.copyAt = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  try {
+    const response = await fetch(endpoint.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context, instructions: GEMINI_INSTRUCTIONS }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Gemini proxy returned ${response.status}`);
+    const copy = await response.json();
+    if (typeof copy.intervention === "string" && typeof copy.detail === "string" && typeof copy.notification === "string") {
+      Object.assign(live, { copy, copyKey: key, copyStatus: "generated" });
+    } else {
+      live.copyStatus = "fallback";
+    }
+  } catch (error) {
+    console.warn("Gemini suggestion unavailable; using the built-in one.", error.message);
+    live.copyStatus = "fallback";
+  } finally {
+    clearTimeout(timeoutId);
+    live.copyBusy = false;
+  }
+  applySuggestionToNotifications();
+  if (state.route === "dashboard") repaint();
+}
+
 // ---- Symptom logging dialog: pick a symptom, rate it from 1 to 10, add an optional note ----
 function openSymptomModal(symptom = null) {
   state.symptomModal = { step: symptom ? 2 : 1, symptom, severity: 5, note: "", saving: false };
@@ -627,6 +768,7 @@ async function submitSymptom() {
     showToast(saved ? "Logged. We'll look at the 30 minutes before it." : "Not saved: the backend is switched off.");
     state.history.loaded = false;
     if (state.route === "insights") loadInsights();
+    if (state.route === "dashboard") loadDashboard({ forceSuggestion: true });
   } catch (error) {
     console.error("Saving symptom failed:", error);
     modal.saving = false;

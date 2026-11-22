@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS device_readings (
 SELECT create_hypertable('device_readings', 'time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS device_readings_device_time ON device_readings (device_id, time DESC);
 
--- A working session lasts while the Arduino is on. ended_at stays NULL while it is on.
+-- A working session lasts from the user pressing Start to Stop (or to an unanswered check-in). ended_at stays NULL while it runs.
+-- last_active_at is the last time the user was known to be there; ended_reason is 'manual' or 'inactivity'.
 -- The summary columns are filled in when the session closes, so lists never have to scan readings.
 CREATE TABLE IF NOT EXISTS working_sessions (
   id            bigserial PRIMARY KEY,
@@ -42,8 +43,13 @@ CREATE TABLE IF NOT EXISTS working_sessions (
   max_light     real,
   max_air       real,
   reading_count integer,
+  last_active_at timestamptz,
+  ended_reason  text CHECK (ended_reason IN ('manual', 'inactivity')),
   CHECK (ended_at IS NULL OR ended_at >= started_at)
 );
+-- For databases created before the check-in feature existed.
+ALTER TABLE working_sessions ADD COLUMN IF NOT EXISTS last_active_at timestamptz;
+ALTER TABLE working_sessions ADD COLUMN IF NOT EXISTS ended_reason text CHECK (ended_reason IN ('manual', 'inactivity'));
 CREATE INDEX IF NOT EXISTS working_sessions_user_started ON working_sessions (user_id, started_at DESC);
 -- A device can only have one open session at a time.
 CREATE UNIQUE INDEX IF NOT EXISTS working_sessions_one_open ON working_sessions (device_id) WHERE ended_at IS NULL;

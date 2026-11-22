@@ -3,6 +3,7 @@ const db = require("../db");
 const { AIR_CAUTION, LIGHT_DIM_BELOW, LIGHT_HARSH_ABOVE, airBand, lightBand } = require("../bands");
 const { SYMPTOMS, HttpError, logSymptom, symptomJson } = require("../symptoms");
 const { requireProfile, isObject } = require("./users");
+const { sessionJson } = require("../sessions");
 
 const router = express.Router();
 
@@ -17,16 +18,6 @@ const parseBefore = value => {
   if (Number.isNaN(date.getTime())) throw new HttpError(400, "before must be a valid date");
   return date;
 };
-
-function sessionJson(row, symptoms = []) {
-  const end = row.ended_at || new Date();
-  return {
-    id: row.id, deviceId: row.device_id, startedAt: row.started_at, endedAt: row.ended_at, open: row.ended_at === null,
-    durationSeconds: Math.round((end - row.started_at) / 1000),
-    avgLight: row.avg_light, avgAir: row.avg_air, maxLight: row.max_light, maxAir: row.max_air, readingCount: row.reading_count,
-    airBand: airBand(row.avg_air), lightBand: lightBand(row.avg_light), symptoms,
-  };
-}
 
 // Recent sessions, newest first, each with a compact list of the symptoms logged during it.
 router.get("/api/users/:userId/sessions", requireProfile, async (request, response) => {

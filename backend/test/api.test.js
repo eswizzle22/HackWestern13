@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 process.env.DEFAULT_DEVICE_ID = ""; // tests must never claim the real device
 const db = require("../src/db");
 const app = require("../src/app");
+const { CHECKIN_MS, CHECKIN_GRACE_MS } = require("../src/config");
 
 const USER = "test-api-user";
 let server;
@@ -142,4 +143,42 @@ test("the demo user's data is complete", async () => {
     const series = (await call("GET", `/api/users/demo-user/readings?range=${range}`)).body;
     assert.ok(series.points.length > 3, range);
   }
+});
+
+test("a user can start a working session, answer the check-in, and stop it", async () => {
+  const base = `/api/users/${USER}/sessions`;
+  assert.equal((await call("POST", "/api/users/nobody/sessions/start")).status, 404);
+  assert.equal((await call("POST", `${base}/start`)).status, 409, "no device is linked yet");
+
+  await db.query("UPDATE profiles SET device_id = 'TEST-API-DEV' WHERE user_id = $1", [USER]);
+  assert.equal((await call("POST", `${base}/stop`)).status, 409, "nothing is running");
+  assert.equal((await call("POST", `${base}/confirm`)).status, 409, "nothing is running");
+
+  const started = await call("POST", `${base}/start`);
+  assert.equal(started.status, 201);
+  assert.equal(started.body.open, true);
+  assert.equal(new Date(started.body.checkInDueAt) - new Date(started.body.startedAt), CHECKIN_MS);
+  assert.equal(new Date(started.body.autoEndsAt) - new Date(started.body.checkInDueAt), CHECKIN_GRACE_MS);
+  assert.equal((await call("POST", `${base}/start`)).status, 409, "only one session at a time");
+
+  const device = (await call("GET", `/api/users/${USER}/device`)).body;
+  assert.equal(device.session.id, started.body.id);
+  assert.ok(device.session.checkInDueAt && device.session.autoEndsAt);
+
+  const confirmed = await call("POST", `${base}/confirm`);
+  assert.equal(confirmed.status, 200);
+  assert.ok(new Date(confirmed.body.checkInDueAt) >= new Date(started.body.checkInDueAt), "the next check-in moved later");
+
+  const logged = (await call("POST", `/api/users/${USER}/symptoms`, { symptom: "fatigue", severity: 3 })).body;
+  assert.equal(String(logged.sessionId), String(started.body.id), "a symptom joins the running session");
+
+  const stopped = await call("POST", `${base}/stop`);
+  assert.equal(stopped.status, 200);
+  assert.equal(stopped.body.open, false);
+  assert.equal(stopped.body.endedReason, "manual");
+  assert.equal((await call("GET", `/api/users/${USER}/device`)).body.session, null);
+
+  const listed = (await call("GET", `${base}`)).body.sessions;
+  assert.equal(listed[0].endedReason, "manual");
+  assert.equal(listed[0].symptoms.length, 1);
 });

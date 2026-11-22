@@ -1,6 +1,7 @@
 const express = require("express");
 const db = require("../db");
-const { SESSION_TIMEOUT_MS } = require("../config");
+const { OFFLINE_AFTER_MS } = require("../config");
+const { checkInDueAt, autoEndsAt } = require("../sessions");
 const { airBand, lightBand, comfortScore } = require("../bands");
 
 const router = express.Router();
@@ -92,8 +93,8 @@ router.get("/api/users/:userId/device", requireProfile, async (request, response
   if (!deviceId) return response.json({ deviceId: null, online: false, lastSeen: null, latest: null, score: null, session: null });
 
   const { rows: [latest] } = await db.query("SELECT time, light, air FROM device_readings WHERE device_id = $1 ORDER BY time DESC LIMIT 1", [deviceId]);
-  const { rows: [open] } = await db.query("SELECT id, started_at FROM working_sessions WHERE device_id = $1 AND ended_at IS NULL", [deviceId]);
-  const online = Boolean(latest) && Date.now() - latest.time.getTime() <= SESSION_TIMEOUT_MS;
+  const { rows: [open] } = await db.query("SELECT id, started_at, last_active_at FROM working_sessions WHERE device_id = $1 AND ended_at IS NULL", [deviceId]);
+  const online = Boolean(latest) && Date.now() - latest.time.getTime() <= OFFLINE_AFTER_MS;
 
   response.json({
     deviceId,
@@ -101,7 +102,7 @@ router.get("/api/users/:userId/device", requireProfile, async (request, response
     lastSeen: latest ? latest.time : null,
     latest: latest ? { time: latest.time, light: latest.light, air: latest.air, lightBand: lightBand(latest.light), airBand: airBand(latest.air) } : null,
     score: latest ? comfortScore(latest.air, latest.light) : null,
-    session: open ? { id: open.id, startedAt: open.started_at, durationSeconds: Math.round((Date.now() - open.started_at.getTime()) / 1000) } : null,
+    session: open ? { id: open.id, startedAt: open.started_at, lastActiveAt: open.last_active_at, checkInDueAt: checkInDueAt(open), autoEndsAt: autoEndsAt(open), durationSeconds: Math.round((Date.now() - open.started_at.getTime()) / 1000) } : null,
   });
 });
 

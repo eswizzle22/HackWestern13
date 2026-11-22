@@ -1,7 +1,7 @@
 const { test, after } = require("node:test");
 const assert = require("node:assert/strict");
 const db = require("../src/db");
-const { ingestReading } = require("../src/sessions");
+const { ingestReading, startSession, stopSession } = require("../src/sessions");
 const { logSymptom, HttpError } = require("../src/symptoms");
 
 const T0 = new Date("2026-01-05T09:00:00Z");
@@ -19,8 +19,9 @@ async function withUser(fn, { device = "TEST-DEV-SYMPTOMS" } = {}) {
   }
 }
 
-// One reading every 30 seconds for `minutes`, light rising 1 per reading and air constant 400.
+// Starts a session, then one reading every 30 seconds for `minutes`: light rising 1 per reading and air constant 400.
 async function stream(client, minutes) {
+  await startSession(client, "test-user-symptoms", T0);
   for (let i = 0; i <= minutes * 2; i++) await ingestReading(client, { deviceId: "TEST-DEV-SYMPTOMS", light: 100 + i, air: 400, time: new Date(T0.getTime() + i * 30000) });
 }
 
@@ -65,7 +66,7 @@ test("a user with no device can still log a symptom", async () => {
 test("a symptom soon after the device went off keeps the averages but joins no session", async () => {
   await withUser(async client => {
     await stream(client, 20);
-    await client.query("UPDATE working_sessions SET ended_at = $1 WHERE device_id = $2", [at(20), "TEST-DEV-SYMPTOMS"]);
+    await stopSession(client, "test-user-symptoms", at(20));
     const log = await logSymptom(client, { userId: "test-user-symptoms", symptom: "brain_fog", time: at(30) });
     assert.equal(log.sessionId, null);
     assert.ok(log.readingsInWindow > 0);

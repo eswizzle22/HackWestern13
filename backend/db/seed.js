@@ -179,7 +179,7 @@ async function seed() {
       const { rows: [created] } = await client.query(
         "INSERT INTO working_sessions (user_id, device_id, started_at) VALUES ($1, $2, $3) RETURNING id, device_id, started_at", [USER_ID, DEVICE_ID, session.startedAt]
       );
-      await closeSession(client, created, session.endedAt);
+      await closeSession(client, created, session.endedAt, "manual");
       symptomEvents.push(...planSymptoms(session));
     }
 

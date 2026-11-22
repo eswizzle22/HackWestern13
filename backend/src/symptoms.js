@@ -1,4 +1,4 @@
-const { SESSION_TIMEOUT_MS } = require("./config");
+const { OFFLINE_AFTER_MS, CHECKIN_MS, CHECKIN_GRACE_MS } = require("./config");
 const { airBand, lightBand } = require("./bands");
 
 const SYMPTOMS = ["headache", "eye_strain", "brain_fog", "fatigue", "irritated_eyes", "other"];
@@ -44,7 +44,9 @@ async function logSymptom(client, { userId, symptom, severity = null, note = nul
   if (profile.device_id) {
     const { rows: [found] } = await client.query(
       `WITH s AS (SELECT id FROM working_sessions
-                   WHERE device_id = $1 AND started_at <= $2 AND (ended_at IS NULL OR ended_at >= $2)
+                   WHERE device_id = $1 AND started_at <= $2
+                     AND ((ended_at IS NOT NULL AND ended_at >= $2)
+                          OR (ended_at IS NULL AND $2 < COALESCE(last_active_at, started_at) + $4 * interval '1 millisecond'))
                    ORDER BY started_at DESC LIMIT 1),
             w AS (SELECT avg(light) AS light_avg, avg(air) AS air_avg, count(*)::int AS n
                     FROM device_readings
@@ -54,7 +56,7 @@ async function logSymptom(client, { userId, symptom, severity = null, note = nul
                    ORDER BY time DESC LIMIT 1)
        SELECT (SELECT id FROM s) AS session_id, w.light_avg, w.air_avg, w.n, l.light, l.air
          FROM w LEFT JOIN l ON true`,
-      [profile.device_id, time, SESSION_TIMEOUT_MS]
+      [profile.device_id, time, OFFLINE_AFTER_MS, CHECKIN_MS + CHECKIN_GRACE_MS]
     );
     snapshot = found;
   }
@@ -66,6 +68,12 @@ async function logSymptom(client, { userId, symptom, severity = null, note = nul
     [userId, snapshot.session_id ?? null, time, symptom, severity, note, snapshot.light ?? null,
       hasWindow ? roundOrNull(snapshot.light_avg) : null, snapshot.air ?? null, hasWindow ? roundOrNull(snapshot.air_avg) : null, snapshot.n ?? 0]
   );
+  // Logging a symptom shows the user is there, so it counts as answering the check-in.
+  if (row.session_id) {
+    await client.query(
+      "UPDATE working_sessions SET last_active_at = GREATEST(COALESCE(last_active_at, started_at), $2) WHERE id = $1 AND ended_at IS NULL", [row.session_id, time]
+    );
+  }
   return symptomJson(row);
 }
 

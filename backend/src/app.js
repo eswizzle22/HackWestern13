@@ -4,6 +4,7 @@ const { HttpError } = require("./symptoms");
 const { router: readingsRouter } = require("./routes/readings");
 const { router: usersRouter } = require("./routes/users");
 const { router: historyRouter } = require("./routes/history");
+const { router: sessionControlRouter } = require("./routes/session-control");
 
 const app = express();
 const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:8000";
@@ -37,6 +38,7 @@ app.get("/health/db", async (request, response) => {
 app.use(readingsRouter);
 app.use(usersRouter);
 app.use(historyRouter);
+app.use(sessionControlRouter);
 
 app.use((error, request, response, next) => {
   if (error instanceof HttpError) return response.status(error.status).json({ error: error.message });

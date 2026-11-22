@@ -12,7 +12,7 @@ BRIDGE_HOST = "0.0.0.0"
 BRIDGE_PORT = 8765
 
 
-AIR_BASELINE = 0
+AIR_BASELINE = 16.4
 
 light_sum = 0.0
 air_sum = 0.0

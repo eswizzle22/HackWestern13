@@ -1,0 +1,7 @@
+{
+  "name": "circaair-prototype",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  }
+}

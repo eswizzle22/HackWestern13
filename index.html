@@ -15,6 +15,12 @@
         domain: "dev-k8441d8ljzg51clv.us.auth0.com",
         clientId: "DE4vYNzuN8KqhFS2gTF4aYBSdHZvIvo7"
       };
+      // Gemini is called only through a server-side proxy.
+      // Never place a Gemini API key in this browser configuration.
+      window.CIRCAAIR_GEMINI_CONFIG = {
+        enabled: true,
+        endpoint: "/api/gemini-copy"
+      };
     </script>
     <script>
       // Leave baseUrl empty to use the localStorage mock until the backend is ready.
@@ -26,6 +32,12 @@
     <div id="app"></div>
     <div id="toast-region" aria-live="polite"></div>
     <script src="backend.js"></script>
+    <script src="pages/login.js"></script>
+    <script src="pages/dashboard.js"></script>
+    <script src="pages/onboarding.js"></script>
+    <script src="pages/insights.js"></script>
+    <script src="pages/device.js"></script>
+
     <script src="app.js"></script>
   </body>
 </html>

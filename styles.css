@@ -10,3 +10,204 @@
 @media(max-width:620px){.symptom-heading{display:block}.symptom-heading>p{margin-top:6px}.symptom-buttons{grid-template-columns:repeat(3,1fr)}.notification-centre{right:16px;bottom:16px}.notification-panel{bottom:62px}}
 @media(max-width:850px){.sidebar{width:190px}.score-card{grid-template-columns:1fr 120px}.score-meta{grid-column:1/-1;border-left:0;border-top:1px solid #bed8c5;padding:16px 0 0;display:flex;margin-top:18px}.metric-grid,.insight-grid,.device-grid{grid-template-columns:1fr 1fr}.break-card{grid-column:1/-1}.survey-wrap{gap:25px}.topbar,.content{padding-left:4%;padding-right:4%}}
 @media(max-width:620px){.sidebar{width:63px;padding:20px 8px}.brand{padding:0 8px 35px}.brand>span:last-child,.user-chip>div:not(.avatar),.chevron,.nav-label,.nav-item:not(.active)::after,.nav-item{font-size:0}.nav-item{justify-content:center;padding:13px 0}.nav-icon{font-size:18px}.user-chip{border:0;background:transparent;padding:0;justify-content:center}.mini-device,.version{display:none}.topbar{height:90px}.topbar h1{font-size:18px}.top-actions{gap:10px}.live-pill{display:none}.content{padding-top:8px}.hero-row{display:block}.hero-row h2{font-size:28px}.hero-row .outline-button,.hero-row .confidence-badge,.hero-row .online-badge{margin-top:15px;display:inline-block}.score-card{display:block;padding:22px}.orb{display:none}.score-meta{justify-content:space-between}.metric-grid,.insight-grid,.device-grid,.survey-wrap{grid-template-columns:1fr}.metric-card{min-height:170px}.break-card{grid-column:auto}.chart-note{display:none}.survey-wrap{margin:20px 0}.survey-intro{padding:0}.survey-progress{margin-top:25px}.correlation-summary{gap:15px;flex-wrap:wrap}.correlation-copy{border-left:0;border-top:1px solid var(--line);padding:12px 0 0;width:100%}.history-list>div{grid-template-columns:1fr;gap:4px}.top-actions .avatar{display:none}}
+
+/* Dark theme: applied via <html data-theme="dark"> (see applySettings in app.js). */
+:root[data-theme="dark"]{--ink:#e6eee9;--muted:#9aa89f;--paper:#111a18;--card:#1a2724;--line:#2c3d38;--green:#5bb994;--mint:#21382f;color-scheme:dark}
+
+/* Elevated surfaces */
+:root[data-theme="dark"] .survey-card,
+:root[data-theme="dark"] .notification-panel,
+:root[data-theme="dark"] .auth-status-card,
+:root[data-theme="dark"] .auth-demo,
+:root[data-theme="dark"] .symptom-button,
+:root[data-theme="dark"] .range-tabs button.selected{background:var(--card);color:var(--ink);border-color:var(--line);box-shadow:none}
+
+/* Recessed / tinted neutral surfaces */
+:root[data-theme="dark"] .auth-page,
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .user-chip,
+:root[data-theme="dark"] .auth-config-note,
+:root[data-theme="dark"] .symptom-section,
+:root[data-theme="dark"] .range-tabs,
+:root[data-theme="dark"] .sensitivity-row select,
+:root[data-theme="dark"] .setting-control select,
+:root[data-theme="dark"] .time-pair input,
+:root[data-theme="dark"] .notification-item>button{background:#16221f;color:var(--ink);border-color:var(--line)}
+:root[data-theme="dark"] .outline-button{color:#8fd1b0;border-color:#3e5a50}
+:root[data-theme="dark"] .outline-button:hover,
+:root[data-theme="dark"] .auth-demo:hover,
+:root[data-theme="dark"] .symptom-button:hover{background:#22332e;border-color:#4a6c5f}
+
+/* Green-tinted surfaces */
+:root[data-theme="dark"] .auth-brand-panel,
+:root[data-theme="dark"] .score-card{background:#1b3029}
+:root[data-theme="dark"] .score-track,
+:root[data-theme="dark"] .confidence-bar,
+:root[data-theme="dark"] .trigger-bar i,
+:root[data-theme="dark"] .survey-progress span,
+:root[data-theme="dark"] .ideal-band{background:#27403a}
+:root[data-theme="dark"] .orb{background:#2b5144}
+:root[data-theme="dark"] .orb-inner,
+:root[data-theme="dark"] .auth-sun span{background:#22392f;color:#7cc79f}
+:root[data-theme="dark"] .auth-sun{background:#27443a;box-shadow:0 0 0 18px #1f3830}
+:root[data-theme="dark"] .good-tag,
+:root[data-theme="dark"] .live-pill,
+:root[data-theme="dark"] .online-badge,
+:root[data-theme="dark"] .confidence-badge,
+:root[data-theme="dark"] .nav-item.active,
+:root[data-theme="dark"] .nav-item:hover,
+:root[data-theme="dark"] .metric-icon,
+:root[data-theme="dark"] .sense-icon,
+:root[data-theme="dark"] .symptom-button span,
+:root[data-theme="dark"] .notification-empty span,
+:root[data-theme="dark"] .avatar{background:#244237;color:#8fd1b0}
+:root[data-theme="dark"] .status-dot{box-shadow:0 0 0 3px #244237}
+:root[data-theme="dark"] .sparkline i{background:#3e7a5c}
+
+/* Warm (yellow / orange) tints */
+:root[data-theme="dark"] .light-card .metric-icon,
+:root[data-theme="dark"] .spark-icon,
+:root[data-theme="dark"] .notification-symbol{background:#3b3320;color:#e6c26a}
+:root[data-theme="dark"] .break-card .metric-icon,
+:root[data-theme="dark"] .break-tag{background:#3d2e22;color:#e0a276}
+:root[data-theme="dark"] .notification-item.warning .notification-symbol{background:#40262277;color:#e58c7a}
+:root[data-theme="dark"] .light-spark i{background:#a8893a}
+:root[data-theme="dark"] .intervention{background:#2a2619;border-color:#4a4125}
+:root[data-theme="dark"] .intervention p,
+:root[data-theme="dark"] .close-intervention{color:#c9bd94}
+
+/* Borders and dividers */
+:root[data-theme="dark"] .mini-device,
+:root[data-theme="dark"] .sensitivity-row,
+:root[data-theme="dark"] .history-list>div,
+:root[data-theme="dark"] .setting-row,
+:root[data-theme="dark"] .notification-item+.notification-item,
+:root[data-theme="dark"] .score-meta,
+:root[data-theme="dark"] .auth-brand-panel:after,
+:root[data-theme="dark"] .auth-orbit{border-color:var(--line)}
+:root[data-theme="dark"] .auth-divider:before,
+:root[data-theme="dark"] .auth-divider:after{background:var(--line)}
+:root[data-theme="dark"] .grid-line{stroke:#2a3a36}
+
+/* Text: greys become readable muted tones, dark greens become light greens */
+:root[data-theme="dark"] .nav-label,
+:root[data-theme="dark"] .section-kicker,
+:root[data-theme="dark"] .eyebrow,
+:root[data-theme="dark"] .date-label,
+:root[data-theme="dark"] .metric-label,
+:root[data-theme="dark"] .nav-item,
+:root[data-theme="dark"] .version,
+:root[data-theme="dark"] .icon-button,
+:root[data-theme="dark"] .range-tabs button,
+:root[data-theme="dark"] .score-line>span:not(.good-tag),
+:root[data-theme="dark"] .score-copy>p,
+:root[data-theme="dark"] .scale,
+:root[data-theme="dark"] .score-meta span,
+:root[data-theme="dark"] .sync-text,
+:root[data-theme="dark"] .chart-legend,
+:root[data-theme="dark"] .chart-note,
+:root[data-theme="dark"] .y-label,
+:root[data-theme="dark"] .x-labels,
+:root[data-theme="dark"] .survey-intro small,
+:root[data-theme="dark"] .step-count span,
+:root[data-theme="dark"] .skip-button,
+:root[data-theme="dark"] .stage-row,
+:root[data-theme="dark"] .trigger-rank,
+:root[data-theme="dark"] .history-time,
+:root[data-theme="dark"] .device-id,
+:root[data-theme="dark"] .auth-status-card small,
+:root[data-theme="dark"] .auth-divider,
+:root[data-theme="dark"] .auth-privacy,
+:root[data-theme="dark"] .auth-config-note,
+:root[data-theme="dark"] .mini-device>span:last-child{color:var(--muted)}
+:root[data-theme="dark"] .nav-item.active,
+:root[data-theme="dark"] .nav-item:hover,
+:root[data-theme="dark"] .range-tabs button.selected,
+:root[data-theme="dark"] .score-meta a,
+:root[data-theme="dark"] .metric-note b,
+:root[data-theme="dark"] .text-button,
+:root[data-theme="dark"] .stage-row b,
+:root[data-theme="dark"] .trigger>strong,
+:root[data-theme="dark"] .matrix-caption b,
+:root[data-theme="dark"] .setting-good,
+:root[data-theme="dark"] .notification-clear,
+:root[data-theme="dark"] .auth-config-note code,
+:root[data-theme="dark"] .symptom-button,
+:root[data-theme="dark"] .auth-demo{color:#8fd1b0}
+:root[data-theme="dark"] .correlation-copy b{color:#e0b060}
+
+/* Form controls (survey, profile, settings) */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select{background:#16221f;color:var(--ink);border-color:var(--line)}
+
+/* Full-page onboarding survey */
+.onboarding-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:24px;padding:10vh 16px 32px}
+.onboarding-top{width:100%;max-width:560px;display:flex;align-items:center;justify-content:space-between}
+.onboarding-top .brand{padding:0}
+.onboarding-progress{display:flex;gap:6px}
+.onboarding-progress span{width:44px;height:4px;background:#d8e0d9}
+.onboarding-progress span.filled{background:var(--green)}
+.onboarding-page .survey-card{width:100%;max-width:560px}
+.onboarding-page .primary-button{margin-top:26px}
+.symptom-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:26px}
+.symptom-cards label{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:15px;cursor:pointer}
+.symptom-cards label:has(input:checked){border-color:var(--green);background:#edf5ed}
+.form-rows{margin-top:22px}
+.form-rows label,.form-rows .row,.profile-panel>label{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--line);font-size:13px}
+.form-rows input,.form-rows select{border:1px solid #d9e2d9;border-radius:5px;padding:8px;color:var(--ink);background:#fbfdf9;max-width:220px}
+.form-rows input[type="number"]{width:110px}
+.form-rows input[type="text"]{width:220px}
+.privacy-note{color:var(--muted);font-size:12px;line-height:1.6;margin:8px 0 0}
+input[type="checkbox"]{accent-color:var(--green)}
+
+/* Profile & settings */
+.profile-page{display:grid;gap:20px;max-width:760px}
+.profile-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.profile-head h3{margin:2px 0 0}
+.survey-card h4,.profile-panel h4{font-size:13px;margin:26px 0 2px}
+.profile-panel select{border:1px solid #d9e2d9;border-radius:5px;padding:7px 10px;color:#52715f;background:#fbfdf9}
+.profile-panel .primary-button{width:auto;padding:11px 24px;margin-top:22px}
+.profile-signout{justify-self:start}
+.user-chip.active{border-color:var(--green)}
+
+/* Dark theme: new pieces */
+:root[data-theme="dark"] .onboarding-progress span{background:#2c3d38}
+:root[data-theme="dark"] .onboarding-progress span.filled{background:var(--green)}
+:root[data-theme="dark"] .symptom-cards label:has(input:checked){background:#244237}
+:root[data-theme="dark"] :root[data-theme="dark"] .profile-panel select,
+:root[data-theme="dark"] .form-rows select,
+:root[data-theme="dark"] .form-rows input{background:#16221f;color:var(--ink);border-color:var(--line)}
+
+
+/* Profile tiles, section headers, unit toggles and the dashboard banner */
+.tile-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:26px 12px;text-align:center}
+.tile:hover{border-color:var(--green)}
+.tile strong{font-size:13px}
+.tile-status{font-size:11px;color:var(--muted)}
+.tile-status.saved{color:var(--green)}
+.tile-icon{width:56px;height:56px;border-radius:50%;background:var(--mint);color:var(--green);display:grid;place-items:center}
+.tile-icon.small{width:40px;height:40px}
+.tile-icon svg{width:26px;height:26px}
+.tile-icon.small svg{width:20px;height:20px}
+.onboarding-page .tile-icon{margin-bottom:10px}
+.back-link{color:var(--green);font-size:12px;font-weight:600}
+.profile-section-head{display:flex;align-items:center;gap:14px}
+.profile-section-head h3{margin:2px 0 0}
+.unit-input{display:flex;align-items:center;gap:8px}
+.form-rows .unit-input input[type="number"]{width:76px}
+.unit-toggle{display:inline-flex;border:1px solid #d9e2d9;border-radius:6px;overflow:hidden}
+.unit-toggle button{border:0;background:transparent;padding:6px 10px;font-size:11px;color:var(--muted)}
+.unit-toggle button.selected{background:var(--green);color:white}
+.profile-banner{display:flex;justify-content:space-between;align-items:center;gap:16px;background:#fff9e9;border:1px solid #f1e3ba;border-radius:10px;padding:16px 20px;margin-bottom:20px;color:#847c65}
+.profile-banner strong{display:block;color:var(--ink);font-size:13px}
+.profile-banner p{margin:3px 0 0;font-size:12px}
+:root[data-theme="dark"] .profile-banner{background:#2a2619;border-color:#4a4125;color:#c9bd94}
+:root[data-theme="dark"] .unit-toggle{border-color:var(--line)}
+:root[data-theme="dark"] .tile-icon{background:#244237;color:#8fd1b0}
+
+@media(max-width:760px){.tile-grid{grid-template-columns:1fr 1fr}.profile-banner{flex-direction:column;align-items:flex-start}}
+@media(max-width:620px){.symptom-cards{grid-template-columns:1fr}}
+
+/* Short pages (like the Profile home) start at the top instead of floating mid-screen. */
+.main{margin-top:0;margin-bottom:0}

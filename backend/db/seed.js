@@ -142,7 +142,8 @@ const DEMO_SURVEY = {
   about: { name: { first: "Alex", last: "Chen" }, profile: { age: 34, height: 170, weight: 66, sex: "" } },
   health: { familyHistory: "yes", headacheDays: "4-7", sleepHours: 6.5, screenTime: 9, caffeine: "3-4", hormonal: [], symptoms: ["Migraine / Headache", "Eye Strain", "Brain Fog"] },
   environment: {
-    sensitivities: { light: "high", dim: "medium", air: "high", voc: "low" },
+    // Sensitive to stale air (the story in the sample data), not much to light, so the demo opens on a calm dashboard.
+    sensitivities: { light: "low", dim: "medium", air: "high", voc: "low" },
     schedule: { workStart: "09:00", workEnd: "17:00", windDown: "21:00" },
   },
 };

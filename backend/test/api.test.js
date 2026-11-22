@@ -5,6 +5,7 @@ process.env.DEFAULT_DEVICE_ID = ""; // tests must never claim the real device
 const db = require("../src/db");
 const app = require("../src/app");
 const { CHECKIN_MS, CHECKIN_GRACE_MS } = require("../src/config");
+const { calculateThresholds } = require("../src/thresholds");
 
 const USER = "test-api-user";
 let server;
@@ -13,7 +14,10 @@ const call = async (method, path, body) => {
   const response = await fetch(base + path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: response.status, body: await response.json().catch(() => null) };
 };
-const cleanup = () => db.query("DELETE FROM profiles WHERE user_id = $1", [USER]);
+const cleanup = async () => {
+  await db.query("DELETE FROM profiles WHERE user_id = $1", [USER]);
+  await db.query("DELETE FROM device_readings WHERE device_id = 'TEST-API-DEV'");
+};
 
 before(async () => {
   await cleanup();
@@ -181,4 +185,31 @@ test("a user can start a working session, answer the check-in, and stop it", asy
   const listed = (await call("GET", `${base}`)).body.sessions;
   assert.equal(listed[0].endedReason, "manual");
   assert.equal(listed[0].symptoms.length, 1);
+});
+
+test("thresholds follow the survey, the Auto-Learn setting and recent symptoms", async () => {
+  const deviceUrl = `/api/users/${USER}/device`;
+  await db.query("INSERT INTO device_readings (time, device_id, light, air) VALUES (now(), 'TEST-API-DEV', 300, 690)");
+
+  let device = (await call("GET", deviceUrl)).body;
+  assert.equal(device.thresholds.calibrated, false, "no environment survey saved yet");
+  assert.equal(device.latest.airBand, "caution", "690 is below the default limit of 700");
+
+  const environment = { sensitivities: { light: "medium", dim: "medium", air: "high", voc: "medium" }, schedule: { workStart: "09:00", workEnd: "17:00", windDown: "21:00" } };
+  await call("PUT", `/api/users/${USER}`, { survey: { environment }, settings: { thresholdMode: "manual" } });
+  device = (await call("GET", deviceUrl)).body;
+  assert.equal(device.thresholds.source, "survey");
+  assert.equal(device.thresholds.airPoor, 670);
+  assert.equal(device.latest.airBand, "poor", "the same reading is now poor for someone sensitive to stale air");
+  assert.ok(device.score < 100);
+
+  await call("PUT", `/api/users/${USER}`, { settings: { thresholdMode: "auto" } });
+  device = (await call("GET", deviceUrl)).body;
+  const rated = (await call("GET", `/api/users/${USER}/symptoms?limit=10`)).body.symptoms.filter(log => log.severity !== null).map(log => log.severity);
+  assert.ok(rated.length > 0, "earlier tests logged rated symptoms");
+  assert.equal(device.thresholds.source, "survey-and-symptoms");
+  assert.deepEqual(device.thresholds, calculateThresholds({ sensitivities: environment.sensitivities, recentSeverities: rated }));
+
+  const insights = (await call("GET", `/api/users/${USER}/insights`)).body;
+  assert.ok(insights.totalLogs >= 1, "insights still work with personal thresholds");
 });

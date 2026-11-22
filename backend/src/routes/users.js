@@ -3,6 +3,7 @@ const db = require("../db");
 const { OFFLINE_AFTER_MS } = require("../config");
 const { checkInDueAt, autoEndsAt } = require("../sessions");
 const { airBand, lightBand, comfortScore } = require("../bands");
+const { thresholdsFor } = require("../thresholds");
 
 const router = express.Router();
 
@@ -90,7 +91,8 @@ router.put("/api/users/:userId", requireProfile, async (request, response) => {
 // Online/Offline, the newest reading and the open session, for the dashboard and Device page.
 router.get("/api/users/:userId/device", requireProfile, async (request, response) => {
   const deviceId = request.profile.device_id;
-  if (!deviceId) return response.json({ deviceId: null, online: false, lastSeen: null, latest: null, score: null, session: null });
+  const thresholds = await thresholdsFor(db, request.profile);
+  if (!deviceId) return response.json({ deviceId: null, online: false, lastSeen: null, latest: null, score: null, session: null, thresholds });
 
   const { rows: [latest] } = await db.query("SELECT time, light, air FROM device_readings WHERE device_id = $1 ORDER BY time DESC LIMIT 1", [deviceId]);
   const { rows: [open] } = await db.query("SELECT id, started_at, last_active_at FROM working_sessions WHERE device_id = $1 AND ended_at IS NULL", [deviceId]);
@@ -100,8 +102,9 @@ router.get("/api/users/:userId/device", requireProfile, async (request, response
     deviceId,
     online,
     lastSeen: latest ? latest.time : null,
-    latest: latest ? { time: latest.time, light: latest.light, air: latest.air, lightBand: lightBand(latest.light), airBand: airBand(latest.air) } : null,
-    score: latest ? comfortScore(latest.air, latest.light) : null,
+    latest: latest ? { time: latest.time, light: latest.light, air: latest.air, lightBand: lightBand(latest.light, thresholds), airBand: airBand(latest.air, thresholds) } : null,
+    score: latest ? comfortScore(latest.air, latest.light, thresholds) : null,
+    thresholds,
     session: open ? { id: open.id, startedAt: open.started_at, lastActiveAt: open.last_active_at, checkInDueAt: checkInDueAt(open), autoEndsAt: autoEndsAt(open), durationSeconds: Math.round((Date.now() - open.started_at.getTime()) / 1000) } : null,
   });
 });

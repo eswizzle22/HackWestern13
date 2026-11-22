@@ -1,5 +1,6 @@
 const { OFFLINE_AFTER_MS, CHECKIN_MS, CHECKIN_GRACE_MS } = require("./config");
-const { airBand, lightBand } = require("./bands");
+const { airBand, lightBand, DEFAULT_THRESHOLDS } = require("./bands");
+const { thresholdsFor } = require("./thresholds");
 
 const SYMPTOMS = ["headache", "eye_strain", "brain_fog", "fatigue", "irritated_eyes", "other"];
 
@@ -12,7 +13,7 @@ class HttpError extends Error {
 
 const roundOrNull = value => (value === null || value === undefined ? null : Math.round(Number(value) * 10) / 10);
 
-function symptomJson(row) {
+function symptomJson(row, thresholds = DEFAULT_THRESHOLDS) {
   return {
     id: row.id,
     sessionId: row.session_id,
@@ -25,8 +26,8 @@ function symptomJson(row) {
     lightAvg30m: row.light_avg_30m,
     airAvg30m: row.air_avg_30m,
     readingsInWindow: row.readings_in_window,
-    airBand: airBand(row.air_avg_30m),
-    lightBand: lightBand(row.light_avg_30m),
+    airBand: airBand(row.air_avg_30m, thresholds),
+    lightBand: lightBand(row.light_avg_30m, thresholds),
   };
 }
 
@@ -37,7 +38,7 @@ async function logSymptom(client, { userId, symptom, severity = null, note = nul
   if (severity !== null && !(Number.isInteger(severity) && severity >= 1 && severity <= 10)) throw new HttpError(400, "severity must be a whole number from 1 to 10");
   if (note !== null && (typeof note !== "string" || note.length > 500)) throw new HttpError(400, "note must be text of at most 500 characters");
 
-  const { rows: [profile] } = await client.query("SELECT device_id FROM profiles WHERE user_id = $1", [userId]);
+  const { rows: [profile] } = await client.query("SELECT user_id, device_id, survey, settings FROM profiles WHERE user_id = $1", [userId]);
   if (!profile) throw new HttpError(404, "User not found");
 
   let snapshot = {};
@@ -74,7 +75,7 @@ async function logSymptom(client, { userId, symptom, severity = null, note = nul
       "UPDATE working_sessions SET last_active_at = GREATEST(COALESCE(last_active_at, started_at), $2) WHERE id = $1 AND ended_at IS NULL", [row.session_id, time]
     );
   }
-  return symptomJson(row);
+  return symptomJson(row, await thresholdsFor(client, profile));
 }
 
 module.exports = { SYMPTOMS, HttpError, logSymptom, symptomJson };

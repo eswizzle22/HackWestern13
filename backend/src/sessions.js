@@ -1,5 +1,5 @@
 const { CHECKIN_MS, CHECKIN_GRACE_MS } = require("./config");
-const { airBand, lightBand } = require("./bands");
+const { airBand, lightBand, DEFAULT_THRESHOLDS } = require("./bands");
 const { HttpError } = require("./symptoms");
 
 // Working sessions are started and stopped by the user. While one runs, it asks "still working?" every CHECKIN_MS.
@@ -94,7 +94,7 @@ async function sweepSessions(client, now = new Date()) {
   return ended;
 }
 
-function sessionJson(row, symptoms = []) {
+function sessionJson(row, symptoms = [], thresholds = DEFAULT_THRESHOLDS) {
   const open = row.ended_at === null;
   const end = row.ended_at || new Date();
   return {
@@ -102,7 +102,7 @@ function sessionJson(row, symptoms = []) {
     lastActiveAt: row.last_active_at, checkInDueAt: open ? checkInDueAt(row) : null, autoEndsAt: open ? autoEndsAt(row) : null,
     durationSeconds: Math.round((end - row.started_at) / 1000),
     avgLight: row.avg_light, avgAir: row.avg_air, maxLight: row.max_light, maxAir: row.max_air, readingCount: row.reading_count,
-    airBand: airBand(row.avg_air), lightBand: lightBand(row.avg_light), symptoms,
+    airBand: airBand(row.avg_air, thresholds), lightBand: lightBand(row.avg_light, thresholds), symptoms,
   };
 }
 

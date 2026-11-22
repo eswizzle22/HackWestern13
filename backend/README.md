@@ -33,7 +33,8 @@ Symptoms: `headache`, `eye_strain`, `brain_fog`, `fatigue`, `irritated_eyes`, `o
 1. **Readings in.** The sensor script posts to `POST /api/readings` with the `x-device-key` header.
 2. **Sessions.** The user presses Start and Stop. Readings never open or close a session. A running session asks "still working?" every hour; if there is no answer within 5 minutes, the server ends it and records the end at the moment the question was due. Logging a symptom counts as answering. Start needs a linked device.
 3. **Symptoms.** Logging one saves the average light and air of the previous 30 minutes. It works with the device off, with the sensor columns left empty.
-4. **Insights.** The server compares how often a symptom followed stale air, bright or dim light, or a long stretch without a break against how often that condition simply happens. Plain templates write the wording.
+4. **Personal thresholds.** The Good, Caution and Poor words (and the score) use limits worked out per person in `src/thresholds.js`. Each survey sensitivity (low, medium, high) shifts the air and light limits, and on Auto-Learn the last 10 rated symptoms lower them by up to 25 percent. Manual mode uses the survey only, and without a saved environment survey the defaults in `src/bands.js` apply. `GET /device` returns the person's current limits.
+5. **Insights.** The server compares how often a symptom followed stale air, bright or dim light, or a long stretch without a break against how often that condition simply happens. Plain templates write the wording.
 
 ## API
 

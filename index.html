@@ -4,27 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#FFFFFF" />
-    <title>CircaAir</title>
+    <title>Prodrome</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- Fallback only: the primary font is Modern Era, loaded from /Fonts in styles.css. -->
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
     <script>
-      window.CIRCAAIR_AUTH0_CONFIG = {
+      window.PRODROME_AUTH0_CONFIG = {
         domain: "dev-k8441d8ljzg51clv.us.auth0.com",
         clientId: "DE4vYNzuN8KqhFS2gTF4aYBSdHZvIvo7"
       };
     </script>
     <script>
-      // Leave baseUrl empty to use the localStorage mock until the backend is ready.
-      window.CIRCAAIR_BACKEND_CONFIG = { baseUrl: "" };
+      // Set mock to true to run without the backend (the profile is then kept in localStorage).
+      window.PRODROME_BACKEND_CONFIG = { baseUrl: "http://localhost:3000", mock: false };
     </script>
     <script src="https://cdn.auth0.com/js/auth0-spa-js/2.1/auth0-spa-js.production.js"></script>
   </head>
   <body>
     <div id="app"></div>
     <div id="toast-region" aria-live="polite"></div>
+    <div id="modal-region"></div>
     <script src="backend.js"></script>
     <script src="app.js"></script>
   </body>

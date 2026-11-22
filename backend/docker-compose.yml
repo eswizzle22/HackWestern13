@@ -1,0 +1,13 @@
+# Local TimescaleDB (Postgres + the timescaledb extension). Start with: docker compose up -d
+services:
+  db:
+    image: timescale/timescaledb:latest-pg17
+    environment:
+      POSTGRES_PASSWORD: prodrome
+      POSTGRES_DB: prodrome
+    ports:
+      - "5432:5432"
+    volumes:
+      - prodrome-data:/var/lib/postgresql/data
+volumes:
+  prodrome-data:

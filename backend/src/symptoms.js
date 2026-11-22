@@ -1,0 +1,72 @@
+const { SESSION_TIMEOUT_MS } = require("./config");
+const { airBand, lightBand } = require("./bands");
+
+const SYMPTOMS = ["headache", "eye_strain", "brain_fog", "fatigue", "irritated_eyes", "other"];
+
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const roundOrNull = value => (value === null || value === undefined ? null : Math.round(Number(value) * 10) / 10);
+
+function symptomJson(row) {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    symptom: row.symptom,
+    severity: row.severity,
+    note: row.note,
+    loggedAt: row.logged_at,
+    light: row.light,
+    air: row.air,
+    lightAvg30m: row.light_avg_30m,
+    airAvg30m: row.air_avg_30m,
+    readingsInWindow: row.readings_in_window,
+    airBand: airBand(row.air_avg_30m),
+    lightBand: lightBand(row.light_avg_30m),
+  };
+}
+
+// Saves one symptom. The sensor columns are filled from the device's readings: the latest reading, and the
+// average of the 30 minutes before the log. With no readings (device was off) they stay empty.
+async function logSymptom(client, { userId, symptom, severity = null, note = null, time = new Date() }) {
+  if (!SYMPTOMS.includes(symptom)) throw new HttpError(400, `symptom must be one of ${SYMPTOMS.join(", ")}`);
+  if (severity !== null && !(Number.isInteger(severity) && severity >= 1 && severity <= 10)) throw new HttpError(400, "severity must be a whole number from 1 to 10");
+  if (note !== null && (typeof note !== "string" || note.length > 500)) throw new HttpError(400, "note must be text of at most 500 characters");
+
+  const { rows: [profile] } = await client.query("SELECT device_id FROM profiles WHERE user_id = $1", [userId]);
+  if (!profile) throw new HttpError(404, "User not found");
+
+  let snapshot = {};
+  if (profile.device_id) {
+    const { rows: [found] } = await client.query(
+      `WITH s AS (SELECT id FROM working_sessions
+                   WHERE device_id = $1 AND started_at <= $2 AND (ended_at IS NULL OR ended_at >= $2)
+                   ORDER BY started_at DESC LIMIT 1),
+            w AS (SELECT avg(light) AS light_avg, avg(air) AS air_avg, count(*)::int AS n
+                    FROM device_readings
+                   WHERE device_id = $1 AND time > $2::timestamptz - interval '30 minutes' AND time <= $2),
+            l AS (SELECT light, air FROM device_readings
+                   WHERE device_id = $1 AND time <= $2 AND time > $2::timestamptz - $3 * interval '1 millisecond'
+                   ORDER BY time DESC LIMIT 1)
+       SELECT (SELECT id FROM s) AS session_id, w.light_avg, w.air_avg, w.n, l.light, l.air
+         FROM w LEFT JOIN l ON true`,
+      [profile.device_id, time, SESSION_TIMEOUT_MS]
+    );
+    snapshot = found;
+  }
+
+  const hasWindow = snapshot.n > 0;
+  const { rows: [row] } = await client.query(
+    `INSERT INTO symptom_logs (user_id, session_id, logged_at, symptom, severity, note, light, light_avg_30m, air, air_avg_30m, readings_in_window)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    [userId, snapshot.session_id ?? null, time, symptom, severity, note, snapshot.light ?? null,
+      hasWindow ? roundOrNull(snapshot.light_avg) : null, snapshot.air ?? null, hasWindow ? roundOrNull(snapshot.air_avg) : null, snapshot.n ?? 0]
+  );
+  return symptomJson(row);
+}
+
+module.exports = { SYMPTOMS, HttpError, logSymptom, symptomJson };

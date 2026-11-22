@@ -293,14 +293,31 @@ async function handleSessionData(request, response) {
   sendJson(response, 201, session);
 }
 
+// Only the website's own files are public. Everything else in the repo folder (.env files, .git, backend/,
+// node_modules, server code, docs) is never served, so secrets cannot be downloaded through this server.
+const PUBLIC_FILES = new Set(["/index.html", "/app.js", "/backend.js", "/styles.css"]);
+const PUBLIC_DIRECTORIES = ["/Fonts/"];
+
+function isPublicPath(decodedPath) {
+  if (PUBLIC_FILES.has(decodedPath)) return true;
+  const hidden = decodedPath.split("/").some(part => part.startsWith("."));
+  return !hidden && PUBLIC_DIRECTORIES.some(directory => decodedPath.startsWith(directory));
+}
+
 function serveStatic(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   const pathname = requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname;
-  const decodedPath = decodeURIComponent(pathname);
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(pathname);
+  } catch {
+    sendJson(response, 404, { error: "Not found" });
+    return;
+  }
   const filePath = path.resolve(root, `.${decodedPath}`);
 
-  if (filePath !== root && !filePath.startsWith(`${root}${path.sep}`)) {
-    sendJson(response, 403, { error: "Forbidden" });
+  if ((filePath !== root && !filePath.startsWith(`${root}${path.sep}`)) || !isPublicPath(decodedPath)) {
+    sendJson(response, 404, { error: "Not found" });
     return;
   }
 

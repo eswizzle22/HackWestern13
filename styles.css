@@ -552,14 +552,15 @@ input[type="checkbox"]:checked::before{transform:translateX(20px);background:var
 .session-detail .section-kicker{margin:0 0 8px}
 
 .log-list{display:block}
-/* The log panel has no padding of its own, so the list and its notes carry the side padding. */
-.correlation-panel .log-list{padding:0 32px}
+/* Rows carry the side padding themselves, so the lavender hover fills the whole width, margins included.
+   The panel clips the fill to its rounded corners, and the dividers stay inset. */
+.correlation-panel{overflow:hidden}
 .correlation-panel>p{margin:0;padding:16px 32px}
-.log-item+.log-item{border-top:1px solid var(--line)}
-.log-row{padding:16px 0;font-size:18px}
-.session-detail .log-row{padding:16px 8px}
+.log-item+.log-item::before{content:"";display:block;height:1px;margin:0 32px;background:var(--line)}
+.log-row{padding:16px 32px;font-size:18px}
+.session-detail .log-list{margin:0 -32px}
 .log-main small{max-width:46ch}
-.log-item .session-detail{padding:0 0 24px}
+.log-item .session-detail{padding:0 32px 24px}
 
 .modal-backdrop{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:24px;background:rgba(255,255,255,.7);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .modal{width:min(720px,100%);max-height:calc(100vh - 48px);overflow:auto;padding:40px;border:1px solid var(--line);border-radius:32px;background:var(--bg);animation:modal-rise 300ms var(--ease)}
@@ -584,4 +585,4 @@ input[type="checkbox"]:checked::before{transform:translateX(20px);background:var
 
 @keyframes modal-rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.modal{animation:none}}
-@media(max-width:760px){.correlation-panel .log-list{padding:0 24px}.correlation-panel>p{padding:16px 24px}.session-head{flex-wrap:wrap}.session-tags{order:3;width:100%}.modal{padding:24px}.modal-tiles{grid-template-columns:1fr}}
+@media(max-width:760px){.log-row{padding-left:24px;padding-right:24px}.log-item+.log-item::before{margin:0 24px}.correlation-panel>p{padding:16px 24px}.session-head{flex-wrap:wrap}.session-tags{order:3;width:100%}.modal{padding:24px}.modal-tiles{grid-template-columns:1fr}}

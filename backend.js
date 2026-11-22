@@ -23,6 +23,7 @@
 //   GET  /symptoms?limit&before  -> the symptom log, newest first
 //   GET  /symptoms/:id/context   -> the two hours of readings before one symptom
 //   POST /symptoms               -> body { symptom, severity (1-10, optional), note (optional) }
+//   POST /sessions/start|stop|confirm -> start working, stop working, answer the hourly "still working?" check-in
 //   GET  /insights               -> patterns across sessions
 //
 // With mock on (the default when no baseUrl is set), the profile is kept in localStorage and every live-data call
@@ -90,6 +91,18 @@
     if (!response.ok) throw new Error(`User update failed (${response.status})`);
   }
 
+  // Start, stop and "still working" for the user's working session. Resolves null when mock is on; rejects with the
+  // server's message (for example "A session is already running").
+  async function control(userId, action) {
+    if (useMock) return null;
+    const response = await request("POST", userId, `/sessions/${action}`, {});
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed (${response.status})`);
+    }
+    return response.json();
+  }
+
   // Saves one symptom. The backend adds the 30-minute sensor averages. Resolves null when mock is on.
   async function logSymptom(userId, { symptom, severity = null, note = null }) {
     if (useMock) return null;
@@ -100,6 +113,9 @@
 
   window.ProdromeBackend = {
     getUser, registerUser, updateUser, logSymptom,
+    startSession: userId => control(userId, "start"),
+    stopSession: userId => control(userId, "stop"),
+    confirmActive: userId => control(userId, "confirm"),
     getDevice: userId => read(userId, "/device"),
     getReadings: (userId, range) => read(userId, `/readings${query({ range })}`),
     getSessions: (userId, options = {}) => read(userId, `/sessions${query(options)}`),

@@ -586,3 +586,17 @@ input[type="checkbox"]:checked::before{transform:translateX(20px);background:var
 @keyframes modal-rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.modal{animation:none}}
 @media(max-width:760px){.log-row{padding-left:24px;padding-right:24px}.log-item+.log-item::before{margin:0 24px}.correlation-panel>p{padding:16px 24px}.session-head{flex-wrap:wrap}.session-tags{order:3;width:100%}.modal{padding:24px}.modal-tiles{grid-template-columns:1fr}}
+
+/* ---------- Start/Stop working and the "still working?" check-in ---------- */
+.hero-actions{display:flex;align-items:center;gap:16px;flex-shrink:0}
+@media(max-width:760px){.hero-actions{flex-wrap:wrap}}
+.outline-button:disabled{opacity:.45;cursor:not-allowed}
+#checkin-region{position:fixed;right:24px;bottom:112px;z-index:40;max-width:min(380px,calc(100vw - 48px))}
+.checkin{padding:24px 28px;border:1px solid var(--ink);border-radius:var(--r-card);background:var(--bg);animation:modal-rise 300ms var(--ease)}
+.checkin h3{margin:0 0 8px;font-size:24px;font-weight:400}
+.checkin p{margin:0 0 20px;font-size:16px;color:var(--ink-soft)}
+.checkin p b{color:var(--ink)}
+.checkin-actions{display:flex;align-items:center;gap:20px}
+.checkin-actions .primary-button{width:auto;padding:12px 24px}
+.checkin-actions .skip-button{margin:0}
+@media(prefers-reduced-motion:reduce){.checkin{animation:none}}

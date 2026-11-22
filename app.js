@@ -160,7 +160,7 @@ const api = () => window.ProdromeBackend;
 const currentUserId = () => state.user && state.user.sub;
 
 function defaultLive() {
-  return { loaded: false, error: false, device: null, series: null, insights: null };
+  return { loaded: false, error: false, device: null, series: null, insights: null, busy: false, notifiedFor: null };
 }
 
 function defaultHistory() {
@@ -248,7 +248,7 @@ function dashboardPage() {
     [headline, detail] = ["No device is paired yet.", "Once a Prodrome One is linked to your account, your readings will appear here."];
   } else if (!online) {
     headline = "Your device is offline.";
-    detail = latest ? `Showing your last reading from ${timeAgo(latest.time)}. Turn on Prodrome One to start a new session.` : "No readings yet. Turn on Prodrome One to get started.";
+    detail = latest ? `Showing your last reading from ${timeAgo(latest.time)}. Turn on Prodrome One, then press Start working.` : "No readings yet. Turn on Prodrome One to get started.";
   } else if (latest.airBand !== "good") {
     [headline, detail] = ["The air could use a refresh.", "Opening a window might help when you get a chance."];
   } else if (latest.lightBand === "harsh") {
@@ -256,7 +256,10 @@ function dashboardPage() {
   } else if (latest.lightBand === "dim") {
     [headline, detail] = ["Light is on the dim side.", "A little more light might be easier on your eyes."];
   }
-  if (online && device.session) detail += ` You've been working for ${formatDuration(device.session.durationSeconds)}.`;
+  if (device && device.session) detail += ` You've been working for ${formatDuration(device.session.durationSeconds)}.`;
+  const working = Boolean(device && device.session);
+  const canStart = Boolean(device && device.deviceId);
+  const workButton = `<button class="outline-button" data-action="toggle-working" ${working || canStart ? "" : 'disabled title="Link a device to start working"'}>${working ? "Stop working" : "Start working"}</button>`;
 
   const airNote = !latest ? "No reading yet" : latest.airBand === "good" ? "Comfortable for focus" : latest.airBand === "caution" ? "Getting a little stale" : "Stale, fresh air might help";
   const lightNote = !latest ? "No reading yet" : latest.lightBand === "good" ? "Comfortable for focus" : latest.lightBand === "dim" ? "On the dim side" : "On the bright side";
@@ -266,7 +269,7 @@ function dashboardPage() {
 
   return `
     ${profileBanner()}
-    <section class="hero-row"><div><h2>${headline}</h2><p class="muted">${detail}</p></div><button class="outline-button" data-action="log-symptom">+ Symptom</button></section>
+    <section class="hero-row"><div><h2>${headline}</h2><p class="muted">${detail}</p></div><div class="hero-actions">${workButton}<button class="outline-button" data-action="log-symptom">+ Symptom</button></div></section>
     <section class="symptom-section" id="symptom-log" aria-labelledby="symptom-heading">
       <div class="symptom-heading"><div><h3 id="symptom-heading">Log a symptom</h3></div><p>Tap what you notice. Prodrome will look for patterns.</p></div>
       <div class="symptom-buttons">
@@ -308,16 +311,22 @@ function paintStatus() {
   if (status) status.textContent = sidebarStatus();
   const pill = document.querySelector("#live-pill");
   if (pill) pill.innerHTML = livePillHtml();
+  renderCheckin();
 }
 
-const liveSignature = () => JSON.stringify([state.live.error, state.live.device && state.live.device.online, state.live.device && state.live.device.latest && state.live.device.latest.time, state.live.device && state.live.device.session && state.live.device.session.id]);
+const liveSignature = () => {
+  const device = state.live.device;
+  const session = device && device.session;
+  return JSON.stringify([state.live.error, device && device.online, device && device.latest && device.latest.time, session && session.id, session && session.checkInDueAt, session ? Math.floor(Date.now() / 60000) : null]);
+};
 
 async function loadDashboard() {
   if (!state.user) return;
   try {
     const id = currentUserId();
     const [device, series, insights] = await Promise.all([api().getDevice(id), api().getReadings(id, state.selectedRange), api().getInsights(id)]);
-    Object.assign(state.live, { loaded: true, error: false, device, series, insights });
+    applyDevice(device);
+    Object.assign(state.live, { loaded: true, error: false, series, insights });
   } catch (error) {
     console.error("Loading live data failed:", error);
     Object.assign(state.live, { loaded: true, error: true });
@@ -325,10 +334,20 @@ async function loadDashboard() {
   repaint();
 }
 
+// Every place that receives the device status goes through here, so a session that ended by itself is noticed.
+function applyDevice(device) {
+  const before = state.live.device && state.live.device.session;
+  state.live.device = device;
+  if (before && !(device && device.session) && !state.live.busy) {
+    showToast("Your session ended automatically because there was no answer. Your data was saved.");
+    state.history.loaded = false;
+  }
+}
+
 async function loadDevice() {
   if (!state.user) return;
   try {
-    state.live.device = await api().getDevice(currentUserId());
+    applyDevice(await api().getDevice(currentUserId()));
     Object.assign(state.live, { loaded: true, error: false });
   } catch (error) {
     console.error("Loading device status failed:", error);
@@ -337,19 +356,107 @@ async function loadDevice() {
   repaint();
 }
 
-// Runs every few seconds on the dashboard and Device page; the page is only redrawn when something changed.
-async function refreshLive() {
-  if (!state.authenticated || !state.user || !["dashboard", "device"].includes(state.route) || !state.live.loaded) return;
+// Runs every few seconds on every signed-in page, so the "still working?" popup can appear anywhere.
+// The page body is only redrawn on the dashboard and Device page, and only when something changed.
+async function refreshLive({ force = false } = {}) {
+  if (!state.authenticated || !state.user || state.needsSurvey || ["login", "onboarding"].includes(state.route)) return;
+  if (!force && !state.live.loaded && ["dashboard", "device"].includes(state.route)) return; // the first load is still running
   const before = liveSignature();
   try {
-    state.live.device = await api().getDevice(currentUserId());
+    applyDevice(await api().getDevice(currentUserId()));
     state.live.error = false;
     if (state.route === "dashboard" && liveSignature() !== before) state.live.series = await api().getReadings(currentUserId(), state.selectedRange);
   } catch (error) {
     state.live.error = true;
   }
-  if (liveSignature() !== before) repaint();
+  if (liveSignature() !== before && ["dashboard", "device"].includes(state.route)) repaint();
   else paintStatus();
+}
+
+// ---- Working session: Start/Stop, and the hourly "still working?" check-in ----
+async function toggleWorking() {
+  const live = state.live;
+  if (live.busy || !live.device || !live.device.deviceId) return;
+  live.busy = true;
+  try {
+    if (live.device.session) {
+      await api().stopSession(currentUserId());
+      showToast("Session saved.");
+    } else {
+      await api().startSession(currentUserId());
+      requestNotificationPermission();
+    }
+    state.history.loaded = false;
+  } catch (error) {
+    showToast(error.message || "Something went wrong.");
+  }
+  try {
+    applyDevice(await api().getDevice(currentUserId()));
+  } catch (error) {
+    console.error("Refreshing device status failed:", error);
+  }
+  live.busy = false;
+  repaint();
+}
+
+async function confirmWorking() {
+  const live = state.live;
+  if (live.busy) return;
+  live.busy = true;
+  try {
+    await api().confirmActive(currentUserId());
+  } catch (error) {
+    showToast(error.message || "Could not reach the backend.");
+  }
+  try {
+    applyDevice(await api().getDevice(currentUserId()));
+  } catch (error) {
+    console.error("Refreshing device status failed:", error);
+  }
+  live.busy = false;
+  repaint();
+}
+
+const formatClock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+let lastDeadlineLook = 0;
+
+// Seconds left to answer, or null when no check-in is due.
+function checkinSecondsLeft() {
+  const session = state.live.device && state.live.device.session;
+  if (!session || Date.now() < new Date(session.checkInDueAt).getTime()) return null;
+  return Math.max(0, Math.ceil((new Date(session.autoEndsAt).getTime() - Date.now()) / 1000));
+}
+
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+}
+
+// A small card in the corner, drawn from the server's timestamps, so it survives page changes and reloads.
+function renderCheckin() {
+  const region = document.querySelector("#checkin-region");
+  if (!region) return;
+  const secondsLeft = checkinSecondsLeft();
+  if (secondsLeft === null) {
+    if (region.firstElementChild) region.innerHTML = "";
+    return;
+  }
+  if (!region.firstElementChild) {
+    region.innerHTML = `<aside class="checkin" role="alertdialog" aria-labelledby="checkin-title"><h3 id="checkin-title">Still working?</h3><p>Your session ends automatically in <b id="checkin-countdown"></b> if we don't hear back.</p><div class="checkin-actions"><button type="button" class="primary-button" data-action="confirm-working">Still working</button><button type="button" class="skip-button" data-action="end-working">End session</button></div></aside>`;
+  }
+  region.querySelector("#checkin-countdown").textContent = formatClock(secondsLeft);
+
+  const session = state.live.device.session;
+  if (state.live.notifiedFor !== session.checkInDueAt) {
+    state.live.notifiedFor = session.checkInDueAt;
+    if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+      new Notification("Still working?", { body: "Your session ends automatically in a few minutes if there is no answer." });
+    }
+  }
+  // The server ends the session within seconds of the deadline, so look more often once time is up.
+  if (secondsLeft === 0 && Date.now() - lastDeadlineLook > 3000) {
+    lastDeadlineLook = Date.now();
+    refreshLive({ force: true });
+  }
 }
 
 async function loadInsights() {
@@ -549,6 +656,9 @@ document.addEventListener("click", event => {
     case "test-pattern": showToast("Test pattern sent to Prodrome One."); break;
     case "dismiss": element.closest(".toast, .intervention")?.remove(); break;
     case "skip-section": advanceSurvey(false); break;
+    case "toggle-working": toggleWorking(); break;
+    case "confirm-working": confirmWorking(); break;
+    case "end-working": toggleWorking(); break;
     case "sign-out": signOut(); break;
     case "more-sessions": loadMore("sessions"); break;
     case "more-symptoms": loadMore("symptoms"); break;
@@ -872,7 +982,7 @@ function sessionCards() {
     const heading = day !== lastDay ? `<h4 class="day-label">${day}</h4>` : "";
     lastDay = day;
     const open = history.openSession === String(session.id);
-    return `${heading}<article class="session-card"><button type="button" class="session-head" data-session="${session.id}" aria-expanded="${open}"><span><b>${formatTime(session.startedAt)} to ${session.open ? "now" : formatTime(session.endedAt)}</b><small>${formatDuration(session.durationSeconds)}</small></span><span class="session-tags"><span class="${tagClass(session.airBand)}">Air: ${AIR_WORDS[session.airBand] || "no data"}</span><span class="${tagClass(session.lightBand)}">Light: ${LIGHT_WORDS[session.lightBand] || "no data"}</span></span><span class="session-dots" aria-label="${session.symptoms.length} symptoms logged">${session.symptoms.map(() => "<i></i>").join("")}</span></button>${open ? sessionDetailHtml(session) : ""}</article>`;
+    return `${heading}<article class="session-card"><button type="button" class="session-head" data-session="${session.id}" aria-expanded="${open}"><span><b>${formatTime(session.startedAt)} to ${session.open ? "now" : formatTime(session.endedAt)}</b><small>${formatDuration(session.durationSeconds)}${session.endedReason === "inactivity" ? " · ended automatically" : ""}</small></span><span class="session-tags"><span class="${tagClass(session.airBand)}">Air: ${AIR_WORDS[session.airBand] || "no data"}</span><span class="${tagClass(session.lightBand)}">Light: ${LIGHT_WORDS[session.lightBand] || "no data"}</span></span><span class="session-dots" aria-label="${session.symptoms.length} symptoms logged">${session.symptoms.map(() => "<i></i>").join("")}</span></button>${open ? sessionDetailHtml(session) : ""}</article>`;
   }).join("");
 }
 
@@ -981,6 +1091,7 @@ window.addEventListener("hashchange", () => {
 });
 // Keeps the dashboard and Device page current while they are open.
 setInterval(refreshLive, 10000);
+setInterval(renderCheckin, 1000);
 
 // Demo mode never touches the backend, so every demo session starts with the survey and nothing persists.
 const demoBackend = { getUser: async () => null, registerUser: async () => {}, updateUser: async () => {} };

@@ -26,9 +26,10 @@ Then visit `http://localhost:8000`. First-time setup for the backend is in `back
 
 Suggestions on the dashboard come from Gemini. Without a key the app shows built-in suggestions instead.
 
-1. Create a file named `.env` in this folder (it is ignored by git).
-2. Add `GEMINI_API_KEY=your-key`. `GEMINI_MODEL` can optionally name a different model.
-3. Restart `npm start`.
+1. Add `GEMINI_API_KEY=your-key` to `backend/.env`, the same file that holds the database settings. (A `.env` in this folder also works, and wins if both have the key.) `GEMINI_MODEL` can optionally name a different model.
+2. Restart `npm start`.
+
+The website server reads only the `GEMINI_` lines from `backend/.env`, so the database password is never loaded into it. Both files are ignored by git.
 
 Never put a key in `index.html` or `app.js`.
 

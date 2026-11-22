@@ -2,7 +2,8 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 
-function loadEnvFile(filePath) {
+// `only` limits which variables are read from the file.
+function loadEnvFile(filePath, { only } = {}) {
   if (!fs.existsSync(filePath)) return;
   const contents = fs.readFileSync(filePath, "utf8");
   for (const line of contents.split(/\r?\n/)) {
@@ -11,6 +12,7 @@ function loadEnvFile(filePath) {
     const separatorIndex = trimmed.indexOf("=");
     if (separatorIndex < 1) continue;
     const name = trimmed.slice(0, separatorIndex).trim();
+    if (only && !only.test(name)) continue;
     let value = trimmed.slice(separatorIndex + 1).trim();
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
@@ -23,6 +25,9 @@ function loadEnvFile(filePath) {
 }
 
 loadEnvFile(path.join(__dirname, ".env"));
+// One file can hold every secret: the backend's .env may also carry the Gemini settings. Only GEMINI_ variables are read
+// from it, so the database password never enters this process.
+loadEnvFile(path.join(__dirname, "backend", ".env"), { only: /^GEMINI_/ });
 
 const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 8000);

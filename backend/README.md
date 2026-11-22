@@ -13,7 +13,7 @@ npm run seed            # optional: 14 days of sample data for "demo-user"
 npm start               # http://localhost:3000
 ```
 
-`.env` settings: `DATABASE_URL`, `DEVICE_KEY` (secret the sensor script sends), `PORT`, `FRONTEND_ORIGIN`, `OFFLINE_AFTER_SECONDS` (default 120), `CHECKIN_MINUTES` (default 60) and `CHECKIN_GRACE_MINUTES` (default 5). Optional: `DEFAULT_DEVICE_ID`, the device given to the first real user who signs up.
+`.env` settings: `DATABASE_URL`, `DEVICE_KEY` (secret the sensor script sends), `PORT`, `FRONTEND_ORIGIN`, `OFFLINE_AFTER_SECONDS` (default 120), `CHECKIN_MINUTES` (default 60) and `CHECKIN_GRACE_MINUTES` (default 5). Also optional here: `GEMINI_API_KEY` and `GEMINI_MODEL`, which this server ignores but the website server (`npm start` in the repo folder) reads, so one file can hold every secret. Optional: `DEFAULT_DEVICE_ID`, the device given to the first real user who signs up.
 
 Other commands: `npm test`, `npm run dev` (auto-restart), `npm run simulate` (fake Arduino), `npm run db:reset -- --yes` (deletes every table).
 

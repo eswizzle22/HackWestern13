@@ -6,6 +6,13 @@ const state = {
   authConfigured: false,
   demoMode: false,
   user: null,
+  needsSurvey: false,
+  onboardingStep: 1,
+  saved: defaultSaved(),
+  registered: false,
+  profileSection: null,
+  survey: defaultSurvey(),
+  settings: defaultSettings(),
   selectedRange: "6h",
   score: 84,
   air: 612,
@@ -27,6 +34,7 @@ const routeMeta = {
   onboarding: ["Sensitivity survey", "Personalize your guardian"],
   insights: ["Insights & triggers", "Your environment, decoded"],
   device: ["Device & settings", "CircaAir desk companion"],
+  profile: ["Profile & settings", "Your profile"],
 };
 
 const navItems = [
@@ -40,28 +48,34 @@ function render() {
   if (!state.authenticated && state.route !== "login") {
     state.route = "login";
   }
+  if (state.authenticated && state.needsSurvey) {
+    state.route = "onboarding";
+  }
   if (state.route === "login") {
     app.innerHTML = loginPage();
     bindLoginEvents();
     return;
   }
+  if (state.route === "onboarding") {
+    app.innerHTML = onboardingPage();
+    bindEvents();
+    return;
+  }
   const meta = routeMeta[state.route] || routeMeta.dashboard;
+  const heading = meta === routeMeta.dashboard ? `Good morning, ${escapeHtml(userName().split(" ")[0])}` : meta[1];
   app.innerHTML = `
     <div class="shell">
       <aside class="sidebar">
         <a class="brand" href="#dashboard"><span class="brand-mark">◒</span><span>circa<span>air</span></span></a>
-        <div class="user-chip"><div class="avatar">AC</div><div><strong>Alex Chen</strong><small>Personal profile</small></div><span class="chevron">⌄</span></div>
+        <a class="user-chip ${state.route === "profile" ? "active" : ""}" href="#profile"><div class="avatar">${userInitials()}</div><div><strong>${escapeHtml(userName())}</strong><small>Profile & settings</small></div><span class="chevron">⌄</span></a>
         <nav aria-label="Main navigation">
           <p class="nav-label">Monitor</p>
           ${navItems.map(([id, icon, label]) => `<a class="nav-item ${state.route === id ? "active" : ""}" href="#${id}"><span class="nav-icon">${icon}</span>${label}</a>`).join("")}
-          <p class="nav-label settings-label">Personalize</p>
-          <a class="nav-item ${state.route === "onboarding" ? "active" : ""}" href="#onboarding"><span class="nav-icon">✦</span>Survey</a>
-          <a class="nav-item" href="#device"><span class="nav-icon">⚙</span>Settings</a>
         </nav>
         <div class="sidebar-footer"><div class="mini-device"><span class="status-dot"></span><div><strong>CircaAir One</strong><small>Online · synced now</small></div><span>›</span></div><small class="version">CircaAir prototype · v0.1</small></div>
       </aside>
       <main class="main">
-        <header class="topbar"><div><p class="eyebrow">${meta[0]}</p><h1>${meta[1]}</h1></div><div class="top-actions"><span class="live-pill"><span class="status-dot"></span> Live</span><button class="icon-button" data-action="toggle-notifications" aria-label="Notifications" aria-expanded="${state.notificationsOpen}">♢${state.notifications.length ? `<b>${state.notifications.length}</b>` : ""}</button><div class="avatar">AC</div></div></header>
+        <header class="topbar"><div><p class="eyebrow">${meta[0]}</p><h1>${heading}</h1></div><div class="top-actions"><span class="live-pill"><span class="status-dot"></span> Live</span><button class="icon-button" data-action="toggle-notifications" aria-label="Notifications" aria-expanded="${state.notificationsOpen}">♢${state.notifications.length ? `<b>${state.notifications.length}</b>` : ""}</button><a class="avatar" href="#profile" aria-label="Profile & settings">${userInitials()}</a></div></header>
         <div class="content">${pageContent()}</div>
       </main>
     </div>
@@ -71,6 +85,7 @@ function render() {
 
 function pageContent() {
   if (state.route === "onboarding") return onboardingPage();
+  if (state.route === "profile") return profilePage();
   if (state.route === "insights") return insightsPage();
   if (state.route === "device") return devicePage();
   return dashboardPage();
@@ -124,9 +139,8 @@ function bindLoginEvents() {
       if (button.dataset.authAction === "demo") {
         state.demoMode = true;
         state.authenticated = true;
-        state.user = { name: "Alex Chen" };
-        location.hash = "onboarding";
-        render();
+        state.user = { sub: "demo-user", name: "Alex Chen" };
+        await routeAfterLogin();
         return;
       }
       if (!state.authConfigured || !state.auth) {
@@ -144,6 +158,7 @@ function bindLoginEvents() {
 
 function dashboardPage() {
   return `
+    ${profileBanner()}
     <section class="hero-row"><div><p class="date-label">TUESDAY, OCTOBER 24 · 9:42 AM</p><h2>Your space is supporting you.</h2><p class="muted">Both air and light are aligned with your morning routine.</p></div><button class="outline-button" data-action="log-symptom">＋ Log a symptom</button></section>
     <section class="symptom-section" id="symptom-log" aria-labelledby="symptom-heading">
       <div class="symptom-heading"><div><p class="section-kicker">QUICK CHECK-IN</p><h3 id="symptom-heading">Log a symptom</h3></div><p>Tap what you notice. CircaAir will look for patterns.</p></div>
@@ -174,8 +189,269 @@ function dashboardPage() {
     <aside class="intervention"><div class="intervention-icon">✦</div><div><p class="section-kicker">GEMINI SUGGESTION</p><h3>A great time for deep work</h3><p>Your light level is steady and air is fresh. This is your personal focus window.</p></div><button class="close-intervention" data-action="dismiss">×</button></aside>`;
 }
 
+const SYMPTOM_FOCUS = ["Migraine / Headache", "Eye Strain", "Brain Fog", "Poor Sleep"];
+const SENSITIVITIES = [
+  ["light", "Bright or harsh light", "Glare, screens, or direct sun", "☼"],
+  ["dim", "Dim or flickering rooms", "Low light or inconsistent lighting", "◐"],
+  ["air", "Stuffy air", "Feeling foggy in poorly ventilated spaces", "≋"],
+  ["voc", "Strong odors / VOCs", "Perfume, cleaning products, or chemicals", "✧"],
+];
+const SCHEDULE_FIELDS = [["workStart", "Work start time"], ["workEnd", "Work end time"], ["windDown", "Evening wind-down time"]];
+
+// Optional fields: select values are "" for "prefer not to say", number fields store a number or null.
+const SEX_OPTIONS = [["", "Prefer not to say"], ["female", "Female"], ["male", "Male"], ["other", "Other"]];
+const YES_NO_OPTIONS = [["", "Prefer not to say"], ["yes", "Yes"], ["no", "No"], ["unsure", "Not sure"]];
+const HEADACHE_DAY_OPTIONS = [["", "Prefer not to say"], ["0-3", "0–3 days"], ["4-7", "4–7 days"], ["8-14", "8–14 days"], ["15+", "15+ days"]];
+const CAFFEINE_OPTIONS = [["", "Prefer not to say"], ["none", "None"], ["1-2", "1–2 cups"], ["3-4", "3–4 cups"], ["5+", "5+ cups"]];
+const HORMONAL_FACTORS = ["Menstrual cycle changes", "Pregnancy", "Hormonal contraceptives", "Menopause"];
+const HEALTH_NUMBERS = [["sleepHours", "Typical sleep (hours per night)", 0, 24, 0.5], ["screenTime", "Daily screen time (hours)", 0, 24, 0.5]];
+
+const ICONS = {
+  person: `<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>`,
+  heart: `<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>`,
+  leaf: `<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>`,
+  gear: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>`,
+};
+const icon = name => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+
+// The survey is three independent sections. A section only exists in the saved profile once the user saves it.
+const SECTION_ORDER = ["about", "health", "environment"];
+const TOTAL_STEPS = SECTION_ORDER.length;
+const SECTIONS = {
+  about: { title: "About you", heading: "Tell us about you", short: "personal details", icon: "person", fields: aboutFields, note: "Only your name is required. The rest is optional and helps CircaAir estimate your migraine risk. Your answers are stored with your account." },
+  health: { title: "Health background", heading: "Your health background", short: "health background", icon: "heart", fields: healthFields, note: "" },
+  environment: { title: "Environment factors", heading: "Your environment", short: "environment factors", icon: "leaf", fields: environmentFields, note: "" },
+};
+
+function defaultSurvey() {
+  return {
+    about: { name: { first: "", last: "" }, profile: { age: null, height: null, weight: null, sex: "" } },
+    health: { familyHistory: "", headacheDays: "", sleepHours: null, screenTime: null, caffeine: "", hormonal: [], symptoms: [] },
+    environment: {
+      sensitivities: { light: "medium", dim: "medium", air: "medium", voc: "medium" },
+      schedule: { workStart: "09:00", workEnd: "17:00", windDown: "21:00" },
+    },
+  };
+}
+
+function defaultSaved() {
+  return { about: false, health: false, environment: false };
+}
+
+function defaultSettings() {
+  return { theme: "light", thresholdMode: "auto", ledAlerts: true, units: { height: "cm", weight: "kg" } };
+}
+
+function selectRow(name, label, options, value) {
+  return `<label>${label}<select name="${name}">${options.map(([optionValue, optionLabel]) => `<option value="${optionValue}" ${value === optionValue ? "selected" : ""}>${optionLabel}</option>`).join("")}</select></label>`;
+}
+
+function numberRow(name, label, min, max, value, step = 1) {
+  return `<label>${label}<input type="number" name="${name}" min="${min}" max="${max}" step="${step}" value="${value ?? ""}" /></label>`;
+}
+
+// A row with a cm/ft or kg/lb toggle. Values are always stored in cm and kg; the inputs show the chosen unit.
+function unitRow(label, field, units, inputs) {
+  const current = state.settings.units[field];
+  return `<div class="row"><span>${label}</span><span class="unit-input">${inputs}<span class="unit-toggle" role="group" aria-label="${label} unit">${units.map(unit => `<button type="button" class="${unit === current ? "selected" : ""}" data-unit="${field}:${unit}">${unit}</button>`).join("")}</span></span></div>`;
+}
+
+function heightRow() {
+  const cm = state.survey.about.profile.height;
+  let inputs;
+  if (state.settings.units.height === "ft") {
+    const totalInches = cm === null ? null : Math.round(cm / 2.54);
+    const feet = totalInches === null ? "" : Math.floor(totalInches / 12);
+    const inches = totalInches === null ? "" : totalInches % 12;
+    inputs = `<input type="number" name="height-ft" min="0" max="8" step="1" value="${feet}" data-initial="${feet}" aria-label="Feet" />ft<input type="number" name="height-in" min="0" max="11" step="1" value="${inches}" data-initial="${inches}" aria-label="Inches" />in`;
+  } else {
+    inputs = `<input type="number" name="profile-height" min="50" max="250" step="any" value="${cm ?? ""}" aria-label="Height in centimetres" />`;
+  }
+  return unitRow("Height", "height", ["cm", "ft"], inputs);
+}
+
+function weightRow() {
+  const kg = state.survey.about.profile.weight;
+  let inputs;
+  if (state.settings.units.weight === "lb") {
+    const pounds = kg === null ? "" : Math.round(kg * 2.20462 * 10) / 10;
+    inputs = `<input type="number" name="weight-lb" min="40" max="660" step="any" value="${pounds}" data-initial="${pounds}" aria-label="Weight in pounds" />`;
+  } else {
+    inputs = `<input type="number" name="profile-weight" min="20" max="300" step="any" value="${kg ?? ""}" aria-label="Weight in kilograms" />`;
+  }
+  return unitRow("Weight", "weight", ["kg", "lb"], inputs);
+}
+
+function aboutFields() {
+  const { name, profile } = state.survey.about;
+  return `<div class="form-rows">
+    <label>First name *<input type="text" name="firstName" value="${escapeHtml(name.first)}" autocomplete="given-name" required /></label>
+    <label>Last name *<input type="text" name="lastName" value="${escapeHtml(name.last)}" autocomplete="family-name" required /></label>
+    ${numberRow("profile-age", "Age (years)", 1, 120, profile.age)}
+    ${heightRow()}
+    ${weightRow()}
+    ${selectRow("profile-sex", "Sex", SEX_OPTIONS, profile.sex)}
+  </div>`;
+}
+
+function healthFields() {
+  const health = state.survey.health;
+  return `<div class="form-rows">
+    ${selectRow("health-familyHistory", "Family history of migraine", YES_NO_OPTIONS, health.familyHistory)}
+    ${selectRow("health-headacheDays", "Headache days per month", HEADACHE_DAY_OPTIONS, health.headacheDays)}
+    ${HEALTH_NUMBERS.map(([key, label, min, max, step]) => numberRow(`health-${key}`, label, min, max, health[key], step)).join("")}
+    ${selectRow("health-caffeine", "Caffeine (cups per day)", CAFFEINE_OPTIONS, health.caffeine)}
+  </div>
+  <h4>Hormonal factors</h4>
+  <div class="symptom-cards">${HORMONAL_FACTORS.map(label => `<label><input type="checkbox" name="hormonal" value="${label}" ${health.hormonal.includes(label) ? "checked" : ""} /> ${label}</label>`).join("")}</div>
+  <h4>Symptom focus</h4>${symptomFields()}`;
+}
+
+function environmentFields() {
+  return `<h4>Environmental sensitivities</h4>${sensitivityFields()}<h4>Workplace routine</h4>${scheduleFields()}`;
+}
+
+function symptomFields() {
+  return `<div class="symptom-cards">${SYMPTOM_FOCUS.map(label => `<label><input type="checkbox" name="symptoms" value="${label}" ${state.survey.health.symptoms.includes(label) ? "checked" : ""} /> ${label}</label>`).join("")}</div>`;
+}
+
+function sensitivityFields() {
+  const { sensitivities } = state.survey.environment;
+  return `<div class="sensitivity-list">${SENSITIVITIES.map(([key, label, hint, icon]) => `<div class="sensitivity-row"><div class="sense-icon">${icon}</div><div><strong>${label}</strong><small>${hint}</small></div><select name="sens-${key}" aria-label="${label}">${["low", "medium", "high"].map(level => `<option value="${level}" ${sensitivities[key] === level ? "selected" : ""}>${level[0].toUpperCase() + level.slice(1)}</option>`).join("")}</select></div>`).join("")}</div>`;
+}
+
+function scheduleFields() {
+  const { schedule } = state.survey.environment;
+  return `<div class="form-rows">${SCHEDULE_FIELDS.map(([key, label]) => `<label>${label}<input type="time" name="${key}" value="${schedule[key]}" /></label>`).join("")}</div>`;
+}
+
+const toNumber = value => (value === "" || value === null ? null : Number(value));
+
+// Unchanged inputs keep the stored cm/kg value, so toggling units and saving doesn't introduce rounding drift.
+function readHeight(form) {
+  if (state.settings.units.height === "cm") return toNumber(form.elements["profile-height"].value);
+  const feet = form.elements["height-ft"];
+  const inches = form.elements["height-in"];
+  if (feet.value === feet.dataset.initial && inches.value === inches.dataset.initial) return state.survey.about.profile.height;
+  if (feet.value === "" && inches.value === "") return null;
+  return Math.round((Number(feet.value || 0) * 12 + Number(inches.value || 0)) * 2.54 * 10) / 10;
+}
+
+function readWeight(form) {
+  if (state.settings.units.weight === "kg") return toNumber(form.elements["profile-weight"].value);
+  const pounds = form.elements["weight-lb"];
+  if (pounds.value === pounds.dataset.initial) return state.survey.about.profile.weight;
+  return pounds.value === "" ? null : Math.round((Number(pounds.value) / 2.20462) * 10) / 10;
+}
+
+// Copies the section form's fields into state.survey[section].
+function readSection(form, section) {
+  const data = new FormData(form);
+  const target = state.survey[section];
+  if (section === "about") {
+    target.name = { first: data.get("firstName").trim(), last: data.get("lastName").trim() };
+    target.profile = { age: toNumber(data.get("profile-age")), height: readHeight(form), weight: readWeight(form), sex: data.get("profile-sex") };
+  } else if (section === "health") {
+    target.familyHistory = data.get("health-familyHistory");
+    target.headacheDays = data.get("health-headacheDays");
+    target.caffeine = data.get("health-caffeine");
+    HEALTH_NUMBERS.forEach(([key]) => { target[key] = toNumber(data.get(`health-${key}`)); });
+    target.hormonal = data.getAll("hormonal");
+    target.symptoms = data.getAll("symptoms");
+  } else {
+    SENSITIVITIES.forEach(([key]) => { target.sensitivities[key] = data.get(`sens-${key}`); });
+    SCHEDULE_FIELDS.forEach(([key]) => { target.schedule[key] = data.get(key); });
+  }
+}
+
+// Full-page intermediate step between login and the dashboard. Each step is one section.
 function onboardingPage() {
-  return `<section class="survey-wrap"><div class="survey-intro"><span class="large-mark">◒</span><p class="eyebrow">A LITTLE ABOUT YOU</p><h2>Make CircaAir<br/><em>personal.</em></h2><p>Tell us what your body notices first. We’ll use this to tune your alerts from day one.</p><div class="survey-progress"><span class="filled"></span><span class="filled"></span><span></span></div><small>Step 2 of 3 · Sensitivities</small></div><form class="survey-card" id="survey-form"><div class="step-count">02 <span>/ 03</span></div><h3>What are you sensitive to?</h3><p class="muted">Choose a sensitivity level for each. You can always change these later.</p><div class="sensitivity-list">${[["Bright or harsh light","Glare, screens, or direct sun","high"],["Dim or flickering rooms","Low light or inconsistent lighting","medium"],["Stuffy air","Feeling foggy in poorly ventilated spaces","high"],["Strong odors / VOCs","Perfume, cleaning products, or chemicals","medium"]].map((x,i) => `<div class="sensitivity-row"><div class="sense-icon">${["☼","◐","≋","✧"][i]}</div><div><strong>${x[0]}</strong><small>${x[1]}</small></div><select aria-label="${x[0]}"><option ${x[2] === "low" ? "selected" : ""}>Low</option><option ${x[2] === "medium" ? "selected" : ""}>Medium</option><option ${x[2] === "high" ? "selected" : ""}>High</option></select></div>`).join("")}</div><button class="primary-button" type="submit">Continue <span>→</span></button><button class="skip-button" type="button" data-action="skip-survey">Skip for now</button></form></section>`;
+  const step = state.onboardingStep;
+  const section = SECTION_ORDER[step - 1];
+  const { heading, icon: iconName, fields, note } = SECTIONS[section];
+  return `<main class="onboarding-page"><div class="onboarding-top"><span class="brand"><span class="brand-mark">◒</span><span>circa<span>air</span></span></span><div class="onboarding-progress" aria-hidden="true">${SECTION_ORDER.map((_, index) => `<span class="${index < step ? "filled" : ""}"></span>`).join("")}</div></div><form class="survey-card" id="survey-form" data-section="${section}"><span class="tile-icon">${icon(iconName)}</span><div class="step-count">0${step} <span>/ 0${TOTAL_STEPS}</span></div><h3>${heading}</h3>${note ? `<p class="privacy-note">${note}</p>` : ""}${fields()}<button class="primary-button" type="submit">${step === TOTAL_STEPS ? "Finish" : "Continue"} <span>→</span></button><button class="skip-button" type="button" data-action="skip-section">Skip this section</button></form></main>`;
+}
+
+function profilePage() {
+  const section = state.profileSection;
+  if (section === "system") return systemSettingsPage();
+  if (SECTIONS[section]) return profileSectionPage(section);
+  return profileHome();
+}
+
+function profileHome() {
+  const tiles = [
+    ...SECTION_ORDER.map(section => [section, SECTIONS[section].title, SECTIONS[section].icon, state.saved[section] ? `<small class="tile-status saved">Saved</small>` : `<small class="tile-status">Not set</small>`]),
+    ["system", "System settings", "gear", ""],
+  ];
+  return `
+    <div class="profile-page">
+      <section class="panel profile-panel profile-head">
+        <div class="avatar">${userInitials()}</div>
+        <div><p class="section-kicker">PROFILE</p><h3>${escapeHtml(userName())}</h3></div>
+      </section>
+      <div class="tile-grid">${tiles.map(([key, title, iconName, status]) => `<a class="tile" href="#profile/${key}"><span class="tile-icon">${icon(iconName)}</span><strong>${title}</strong>${status}</a>`).join("")}</div>
+      <button class="outline-button profile-signout" type="button" data-action="sign-out">Sign out</button>
+    </div>`;
+}
+
+function profileSectionPage(section) {
+  const { title, icon: iconName, fields } = SECTIONS[section];
+  return `
+    <div class="profile-page">
+      <a class="back-link" href="#profile">← Profile</a>
+      <form class="panel profile-panel" id="profile-section-form" data-section="${section}">
+        <div class="profile-section-head"><span class="tile-icon small">${icon(iconName)}</span><div><p class="section-kicker">PROFILE</p><h3>${title}</h3></div></div>
+        ${fields()}
+        <button class="primary-button" type="submit">Save ${title.toLowerCase()}</button>
+      </form>
+    </div>`;
+}
+
+function systemSettingsPage() {
+  const settings = state.settings;
+  return `
+    <div class="profile-page">
+      <a class="back-link" href="#profile">← Profile</a>
+      <form class="panel profile-panel" id="profile-settings-form">
+        <div class="profile-section-head"><span class="tile-icon small">${icon("gear")}</span><div><p class="section-kicker">PROFILE</p><h3>System settings</h3></div></div>
+        <label>Theme <select name="theme">${["light", "dark"].map(value => `<option value="${value}" ${settings.theme === value ? "selected" : ""}>${value[0].toUpperCase() + value.slice(1)}</option>`).join("")}</select></label>
+        <label>Alert thresholds <select name="thresholdMode">${[["auto", "Auto-Learn"], ["manual", "Manual"]].map(([value, label]) => `<option value="${value}" ${settings.thresholdMode === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <label>Arduino LED Matrix alerts <input type="checkbox" name="ledAlerts" ${settings.ledAlerts ? "checked" : ""} /></label>
+        <button class="primary-button" type="submit">Save settings</button>
+      </form>
+    </div>`;
+}
+
+// Shown on the dashboard until every survey section has been saved.
+function profileBanner() {
+  const missing = SECTION_ORDER.filter(section => !state.saved[section]).map(section => SECTIONS[section].short);
+  if (!missing.length) return "";
+  const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}` : missing[0];
+  return `<aside class="profile-banner"><div><strong>Complete your profile</strong><p>Add your ${list} to personalize your alerts.</p></div><a class="outline-button small" href="#profile">Go to Profile →</a></aside>`;
+}
+
+function userName() {
+  const { first, last } = state.survey.about.name;
+  return `${first} ${last}`.trim() || state.user?.name || state.user?.nickname || "Guest";
+}
+
+function userInitials() {
+  return userName().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join("") || "?";
+}
+
+function applySettings() {
+  document.documentElement.dataset.theme = state.settings.theme;
+}
+
+async function signOut() {
+  if (state.demoMode || !state.auth) {
+    Object.assign(state, { authenticated: false, demoMode: false, user: null, needsSurvey: false, onboardingStep: 1, registered: false });
+    location.hash = "login";
+    render();
+    return;
+  }
+  await state.auth.logout({ logoutParams: { returnTo: window.location.origin } });
 }
 
 function insightsPage() {
@@ -240,14 +516,52 @@ function bindEvents() {
     if (action === "start-break") { state.breakDue = true; showToast("Break timer started — see you in 5 minutes."); }
     if (action === "test-pattern") showToast("Test pattern sent to CircaAir One.");
     if (action === "dismiss") event.currentTarget.closest(".toast, .intervention")?.remove();
-    if (action === "skip-survey") { location.hash = "dashboard"; }
+    if (action === "skip-section") advanceSurvey(false);
+    if (action === "sign-out") signOut();
   }));
-  const form = document.querySelector("#survey-form");
-  if (form) form.addEventListener("submit", event => { event.preventDefault(); showToast("Your sensitivity profile is saved."); setTimeout(() => { location.hash = "dashboard"; }, 800); });
+
+  document.querySelectorAll("[data-unit]").forEach(button => button.addEventListener("click", () => {
+    const [field, unit] = button.dataset.unit.split(":");
+    const form = button.closest("form");
+    readSection(form, form.dataset.section);
+    state.settings.units[field] = unit;
+    render();
+  }));
+
+  const onboardingForm = document.querySelector("#survey-form");
+  if (onboardingForm) onboardingForm.addEventListener("submit", event => {
+    event.preventDefault();
+    readSection(onboardingForm, onboardingForm.dataset.section);
+    advanceSurvey(true);
+  });
+
+  const sectionForm = document.querySelector("#profile-section-form");
+  if (sectionForm) sectionForm.addEventListener("submit", event => {
+    event.preventDefault();
+    saveProfileSection(sectionForm);
+  });
+
+  const settingsForm = document.querySelector("#profile-settings-form");
+  if (settingsForm) settingsForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const data = new FormData(settingsForm);
+    state.settings = { ...state.settings, theme: data.get("theme"), thresholdMode: data.get("thresholdMode"), ledAlerts: data.has("ledAlerts") };
+    applySettings();
+    try {
+      await backend().updateUser(state.user.sub, { settings: state.settings });
+      showToast("Settings saved.");
+    } catch (error) {
+      console.error("Saving settings failed:", error);
+      showToast("Could not save your settings.");
+    }
+  });
 }
 
+// Routes look like "dashboard" or "profile/<section>".
 window.addEventListener("hashchange", () => {
-  state.route = location.hash.slice(1) || (state.authenticated ? "dashboard" : "login");
+  const [route, section] = (location.hash.slice(1) || (state.authenticated ? "dashboard" : "login")).split("/");
+  state.route = route;
+  state.profileSection = section || null;
   render();
 });
 setInterval(() => {
@@ -260,6 +574,116 @@ setInterval(() => {
     if (lux) lux.textContent = state.lux;
   }
 }, 5000);
+
+// Demo mode never touches the backend, so every demo session starts with the survey and nothing persists.
+const demoBackend = { getUser: async () => null, registerUser: async () => {}, updateUser: async () => {} };
+const backend = () => (state.demoMode ? demoBackend : window.CircaAirBackend);
+
+// New users (not found in TigerData) see the survey; existing users go straight to the dashboard.
+async function routeAfterLogin() {
+  state.needsSurvey = false;
+  state.registered = false;
+  state.survey = defaultSurvey();
+  state.saved = defaultSaved();
+  state.settings = defaultSettings();
+  try {
+    const stored = await backend().getUser(state.user.sub);
+    if (stored) {
+      state.registered = true;
+      loadStoredProfile(stored);
+    } else {
+      state.needsSurvey = true;
+    }
+  } catch (error) {
+    console.error("User lookup failed:", error);
+    showToast("Could not reach the CircaAir backend.");
+  }
+  applySettings();
+  state.route = state.needsSurvey ? "onboarding" : "dashboard";
+  location.hash = state.route;
+  render();
+}
+
+// A section present in the stored survey was saved; a missing one was skipped and stays "Not set".
+function loadStoredProfile(stored) {
+  const defaults = defaultSurvey();
+  const survey = stored.survey || {};
+  SECTION_ORDER.forEach(section => { state.saved[section] = Boolean(survey[section]); });
+  if (survey.about) state.survey.about = { name: { ...defaults.about.name, ...survey.about.name }, profile: { ...defaults.about.profile, ...survey.about.profile } };
+  if (survey.health) state.survey.health = { ...defaults.health, ...survey.health };
+  if (survey.environment) state.survey.environment = { sensitivities: { ...defaults.environment.sensitivities, ...survey.environment.sensitivities }, schedule: { ...defaults.environment.schedule, ...survey.environment.schedule } };
+  state.settings = { ...state.settings, ...stored.settings, units: { ...state.settings.units, ...stored.settings?.units } };
+}
+
+function surveyStatus() {
+  const count = SECTION_ORDER.filter(section => state.saved[section]).length;
+  return count === TOTAL_STEPS ? "completed" : count ? "partial" : "skipped";
+}
+
+// Sends every saved section (never a skipped one). The first save creates the user; later saves update it.
+async function persistSurvey() {
+  const survey = Object.fromEntries(SECTION_ORDER.filter(section => state.saved[section]).map(section => [section, state.survey[section]]));
+  const payload = { surveyStatus: surveyStatus(), survey, settings: state.settings };
+  if (state.registered) {
+    await backend().updateUser(state.user.sub, payload);
+  } else {
+    await backend().registerUser(state.user.sub, payload);
+    state.registered = true;
+  }
+}
+
+// Continue saves the current section and moves on; Skip moves on without saving it.
+async function advanceSurvey(saveCurrent) {
+  const section = SECTION_ORDER[state.onboardingStep - 1];
+  if (saveCurrent) {
+    state.saved[section] = true;
+    try {
+      await persistSurvey();
+    } catch (error) {
+      state.saved[section] = false;
+      console.error("Saving survey section failed:", error);
+      showToast("Could not save this section.");
+      return;
+    }
+  }
+  if (state.onboardingStep < TOTAL_STEPS) {
+    state.onboardingStep += 1;
+    render();
+    return;
+  }
+  await finishSurvey();
+}
+
+async function finishSurvey() {
+  if (!state.registered) {
+    // Every section was skipped; still create the user so the survey doesn't come back at next login.
+    try {
+      await persistSurvey();
+    } catch (error) {
+      console.error("Creating user failed:", error);
+      showToast("Could not save your survey.");
+    }
+  }
+  state.needsSurvey = false;
+  state.onboardingStep = 1;
+  location.hash = "dashboard";
+}
+
+async function saveProfileSection(form) {
+  const section = form.dataset.section;
+  const wasSaved = state.saved[section];
+  readSection(form, section);
+  state.saved[section] = true;
+  try {
+    await persistSurvey();
+    render();
+    showToast(`${SECTIONS[section].title} saved.`);
+  } catch (error) {
+    state.saved[section] = wasSaved;
+    console.error("Saving profile section failed:", error);
+    showToast("Could not save this section.");
+  }
+}
 
 async function initializeAuth0() {
   const config = window.CIRCAAIR_AUTH0_CONFIG || {};
@@ -287,8 +711,7 @@ async function initializeAuth0() {
       state.authenticated = await state.auth.isAuthenticated();
       if (state.authenticated) {
         state.user = await state.auth.getUser();
-        state.route = "onboarding";
-        location.hash = "onboarding";
+        await routeAfterLogin();
       }
     } catch (error) {
       console.error("Auth0 initialization failed:", error);

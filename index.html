@@ -15,6 +15,12 @@
         domain: "dev-k8441d8ljzg51clv.us.auth0.com",
         clientId: "DE4vYNzuN8KqhFS2gTF4aYBSdHZvIvo7"
       };
+      // Gemini is called only through a server-side proxy.
+      // Never place a Gemini API key in this browser configuration.
+      window.PRODROME_GEMINI_CONFIG = {
+        enabled: true,
+        endpoint: "/api/gemini-copy"
+      };
     </script>
     <script>
       // Set mock to true to run without the backend (the profile is then kept in localStorage).

@@ -232,6 +232,8 @@ function dashboardPage() {
   const { loaded, error, device, series, insights } = state.live;
   const latest = device && device.latest;
   const online = Boolean(device && device.online);
+  const displayAirPercent = latest ? airDisplayPercent(latest.air, device && device.thresholds) : null;
+  const displayLightPercent = latest ? lightDisplayPercent(latest.light, device && device.thresholds) : null;
   const score = device && device.score !== null && device.score !== undefined ? device.score : null;
   const scoreWord = score === null ? "" : score >= 75 ? "Good" : score >= 50 ? "Caution" : "Poor";
   const scoreNote = score === null ? "Waiting for a reading" : score >= 75 ? "Your space feels balanced" : score >= 50 ? "A few things are drifting" : "Your space could use some attention";
@@ -249,12 +251,14 @@ function dashboardPage() {
   } else if (!online) {
     headline = "Your device is offline.";
     detail = latest ? `Showing your last reading from ${timeAgo(latest.time)}. Turn on Prodrome One, then press Start working.` : "No readings yet. Turn on Prodrome One to get started.";
-  } else if (latest.airBand !== "good") {
+  } else if (displayAirPercent !== null && displayAirPercent >= 100) {
     [headline, detail] = ["The air could use a refresh.", "Opening a window might help when you get a chance."];
-  } else if (latest.lightBand === "harsh") {
+  } else if (displayLightPercent !== null && displayLightPercent >= 100) {
     [headline, detail] = ["Light is on the bright side.", "Some shade on the screen or window might help."];
-  } else if (latest.lightBand === "dim") {
+  } else if (displayLightPercent !== null && displayLightPercent < 50) {
     [headline, detail] = ["Light is on the dim side.", "A little more light might be easier on your eyes."];
+  } else if (displayAirPercent !== null && displayAirPercent >= 50) {
+    [headline, detail] = ["The air is elevated.", "A little fresh air might help when you get a chance."];
   }
   if (device && device.session) detail += ` You've been working for ${formatDuration(device.session.durationSeconds)}.`;
   const working = Boolean(device && device.session);
@@ -268,6 +272,9 @@ function dashboardPage() {
   const hour = new Date().getHours();
   const daypart = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
 
+  const airDisplayNoteText = airDisplayNote(displayAirPercent);
+  const lightDisplayNoteText = lightDisplayNote(displayLightPercent);
+
   return `
     ${profileBanner()}
     <section class="hero-row"><div><h2>${headline}</h2><p class="muted">${detail}</p></div><div class="hero-actions">${workButton}<button class="outline-button" data-action="log-symptom">+ Symptom</button></div></section>
@@ -278,14 +285,14 @@ function dashboardPage() {
       </div>
     </section>
     <section class="score-card">
-      <div class="score-copy"><div class="score-line"><strong>${score === null ? "—" : score}</strong><span>/ 100</span><span class="good-tag">${scoreWord}</span></div><p>${scoreNote}</p><div class="score-track"><span style="width:${score || 0}%"></span></div><div class="scale"><span>Needs attention</span><span>Optimal</span></div></div>
+      <div class="score-copy"><div class="score-line"><strong>${score === null ? "—" : score}</strong><span>/ 100</span><span class="good-tag">${scoreWord}</span></div><p>${scoreNote}</p><div class="score-track"><span style="width:${score || 0}%"></span><div class="scale"><span>Needs attention</span><span>Optimal</span></div></div>
       <div class="orb"><div class="orb-inner"><span>☀</span><small>${daypart}<br/>focus</small></div></div>
       <div class="score-meta"><div><span>Last updated</span><strong>${latest ? timeAgo(latest.time) : "—"}</strong></div><div><span>Profile confidence</span><strong>${insights ? `${insights.confidence}%` : "—"} <a href="#insights">View insights →</a></strong></div></div>
     </section>
     <section class="section-head"><div><h3>Environmental snapshot</h3></div><span class="sync-text"><span class="status-dot"></span> ${online ? "Synced from Prodrome One" : "Prodrome One is offline"}</span></section>
     <section class="metric-grid">
-      <article class="metric-card air-card"><div class="metric-header"><div class="metric-icon">≋</div><span class="${tagClass(latest && latest.airBand)}">${latest ? AIR_WORDS[latest.airBand] : "No data"}</span></div><p class="metric-label">Air quality</p><div class="metric-value"><strong>${latest ? Math.round(latest.air) : "—"}</strong><span>of 1023, lower is better</span></div><p class="metric-note">${airNote}</p><div class="sparkline air-spark">${bars("air", 1023)}</div></article>
-      <article class="metric-card light-card"><div class="metric-header"><div class="metric-icon">☼</div><span class="${tagClass(latest && latest.lightBand)}">${latest ? LIGHT_WORDS[latest.lightBand] : "No data"}</span></div><p class="metric-label">Lighting</p><div class="metric-value"><strong>${latest ? Math.round(latest.light) : "—"}</strong><span>of 625</span></div><p class="metric-note">${lightNote}</p><div class="sparkline light-spark">${bars("light", 625)}</div></article>
+      <article class="metric-card air-card ${airStatusClass(displayAirPercent)}"><div class="metric-header"><div class="metric-icon">≋</div><span class="${tagClass(latest && latest.airBand)}">${airDisplayLabel(displayAirPercent)}</span></div><p class="metric-label">Air quality</p><div class="metric-value"><strong>${displayAirPercent === null ? "—" : `${displayAirPercent}%`}</strong><span>of your air quality limit</span></div><p class="metric-note">${airDisplayNoteText}</p><div class="sparkline air-spark">${bars("air", 1023)}</div></article>
+      <article class="metric-card light-card ${lightStatusClass(displayLightPercent)}"><div class="metric-header"><div class="metric-icon">☼</div><span class="${tagClass(latest && latest.lightBand)}">${lightDisplayLabel(displayLightPercent)}</span></div><p class="metric-label">Lighting</p><div class="metric-value"><strong>${displayLightPercent === null ? "—" : `${displayLightPercent}%`}</strong><span>of your light limit</span></div><p class="metric-note">${lightDisplayNoteText}</p><div class="sparkline light-spark">${bars("light", 625)}</div></article>
     </section>
     <section class="section-head chart-head"><div><h3>How your space has felt</h3></div><div class="range-tabs">${["15m", "6h", "24h", "7d"].map(range => `<button class="${state.selectedRange === range ? "selected" : ""}" data-range="${range}">${range}</button>`).join("")}</div></section>
     <section class="chart-card"><div class="chart-legend"><span><i class="legend-air"></i> Air quality</span><span><i class="legend-light"></i> Lighting</span></div><div class="chart">${trendChart({ points: series && series.points, from: series && series.from, to: series && series.to, labelDays: state.selectedRange === "7d" })}</div></section>
@@ -323,6 +330,7 @@ const liveSignature = () => {
 
 async function loadDashboard({ forceSuggestion = false } = {}) {
   if (!state.user) return;
+  const before = liveSignature();
   try {
     const id = currentUserId();
     const [device, series, insights, symptoms] = await Promise.all([api().getDevice(id), api().getReadings(id, state.selectedRange), api().getInsights(id), api().getSymptoms(id, { limit: 5 })]);
@@ -333,7 +341,7 @@ async function loadDashboard({ forceSuggestion = false } = {}) {
     Object.assign(state.live, { loaded: true, error: true });
   }
   repaint();
-  refreshSuggestion({ force: forceSuggestion });
+  if (liveSignature() !== before && state.route === "dashboard") refreshSuggestion();
 }
 
 // Every place that receives the device status goes through here, so a session that ended by itself is noticed.
@@ -777,6 +785,14 @@ async function submitSymptom() {
   }
 }
 
+// Demo mode loads the seeded demo profile and live history, while profile writes stay local.
+const demoBackend = {
+  getUser: () => window.ProdromeBackend.getUser("demo-user"),
+  registerUser: async () => {},
+  updateUser: async () => {},
+};
+const backend = () => (state.demoMode ? demoBackend : window.ProdromeBackend);
+
 // One click listener for the whole page, so buttons keep working when a section is redrawn.
 document.addEventListener("click", event => {
   const element = event.target.closest("[data-action], [data-range], [data-symptom], [data-session], [data-log], [data-modal], [data-dismiss-notification]");
@@ -1084,19 +1100,20 @@ async function signOut() {
     return;
   }
   await state.auth.logout({ logoutParams: { returnTo: window.location.origin } });
+
 }
 
 function symptomLine(log) {
   if (log.note) return escapeHtml(log.note);
   if (log.readingsInWindow > 0) return `Air ${(AIR_WORDS[log.airBand] || "unknown").toLowerCase()}, light ${(LIGHT_WORDS[log.lightBand] || "unknown").toLowerCase()} in the 30 minutes before`;
-  return "The device was off, so there are no readings for this one.";
+   return "The device was off, and there are no readings for this one.";
 }
 
 function symptomContextHtml(log) {
-  const context = state.history.symptomContext;
+         const context = state.history.symptomContext;
   if (!context || String(context.symptom.id) !== String(log.id)) return `<p class="muted session-detail">Loading.</p>`;
-  const summary = log.readingsInWindow > 0
-    ? `In the 30 minutes before: air ${(AIR_WORDS[log.airBand] || "unknown").toLowerCase()}, light ${(LIGHT_WORDS[log.lightBand] || "unknown").toLowerCase()}.`
+  const summary = log.readingsInWindow >  0
+    ? `In the  30 minutes before: air ${(AIR_WORDS[log.airBand] || "unknown").toLowerCase()}, light ${(LIGHT_WORDS[log.lightBand] || "unknown").toLowerCase()}.`
     : "The device was off, so there are no readings for this one.";
   return `<div class="session-detail"><p class="section-kicker">Before your symptom</p><div class="chart">${trendChart({ points: context.points, from: context.from, to: context.to, shade: { from: context.windowFrom, to: context.to } })}</div><p class="muted">${summary}</p></div>`;
 }
@@ -1235,10 +1252,6 @@ window.addEventListener("hashchange", () => {
 setInterval(refreshLive, 10000);
 setInterval(renderCheckin, 1000);
 
-// Demo mode never touches the backend, so every demo session starts with the survey and nothing persists.
-const demoBackend = { getUser: async () => null, registerUser: async () => {}, updateUser: async () => {} };
-const backend = () => (state.demoMode ? demoBackend : window.ProdromeBackend);
-
 // New users (not found in TigerData) see the survey; existing users go straight to the dashboard.
 async function routeAfterLogin() {
   state.needsSurvey = false;
@@ -1264,7 +1277,6 @@ async function routeAfterLogin() {
   state.route = state.needsSurvey ? "onboarding" : "dashboard";
   location.hash = state.route;
   render();
-  loadRouteData();
 }
 
 // A section present in the stored survey was saved; a missing one was skipped and stays "Not set".
@@ -1387,3 +1399,43 @@ async function initializeAuth0() {
 }
 
 initializeAuth0();
+
+// Calculate display-only percentage values for the Environmental snapshot cards using the live readings and personalized thresholds.
+const AIR_DISPLAY_BASELINE = 16.4;
+
+function airDisplayPercent(air, thresholds) {
+  if (air === null || air === undefined) return null;
+  const threshold = Number(thresholds && thresholds.airPoor) || 690;
+  return Math.max(0, Math.round(((Number(air) - AIR_DISPLAY_BASELINE) / threshold) * 100));
+}
+
+function lightDisplayPercent(light, thresholds) {
+  if (light === null || light === undefined) return null;
+  const baseline = 0;
+  const threshold = Number(thresholds && thresholds.lightHarsh) || 510;
+  return Math.max(0, Math.round(((Number(light) - baseline) / (threshold - baseline)) * 100));
+}
+
+function airDisplayLabel(percent) {
+  return percent === null ? "No data" : percent < 50 ? "Fresh" : percent < 100 ? "Elevated" : "Poor";
+}
+
+function lightDisplayLabel(percent) {
+  return percent === null ? "No data" : percent < 50 ? "Low" : percent < 100 ? "Moderate" : "Bright";
+}
+
+function airDisplayNote(percent) {
+  return percent === null ? "No reading yet" : percent < 50 ? "Fresh air" : percent < 100 ? "Air is elevated" : "Poor air";
+}
+
+function lightDisplayNote(percent) {
+  return percent === null ? "No reading yet" : percent < 50 ? "Low light" : percent < 100 ? "Moderate light" : "Bright light";
+}
+
+function airStatusClass(percent) {
+  return percent === null ? "status-neutral" : percent < 50 ? "status-good" : percent < 100 ? "status-moderate" : "status-poor";
+}
+
+function lightStatusClass(percent) {
+  return percent === null ? "status-neutral" : percent < 50 ? "status-good" : percent < 100 ? "status-moderate" : "status-poor";
+}

@@ -102,7 +102,7 @@ router.get("/api/users/:userId/device", requireProfile, async (request, response
     deviceId,
     online,
     lastSeen: latest ? latest.time : null,
-    latest: latest ? { time: latest.time, light: latest.light, air: latest.air, lightBand: lightBand(latest.light, thresholds), airBand: airBand(latest.air, thresholds) } : null,
+    latest: latest ? { time: latest.time, light: latest.light, air: latest.air } : null,
     score: latest ? comfortScore(latest.air, latest.light, thresholds) : null,
     thresholds,
     session: open ? { id: open.id, startedAt: open.started_at, lastActiveAt: open.last_active_at, checkInDueAt: checkInDueAt(open), autoEndsAt: autoEndsAt(open), durationSeconds: Math.round((Date.now() - open.started_at.getTime()) / 1000) } : null,

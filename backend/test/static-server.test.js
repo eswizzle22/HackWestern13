@@ -48,7 +48,7 @@ test("secrets and source files are not served", async () => {
   for (const file of blocked) {
     const response = await get(file);
     assert.equal(response.status, 404, `${file} must not be served`);
-    assert.ok(!/DATABASE_URL|DEVICE_KEY|GEMINI_API_KEY|tsdbadmin/.test(response.body), `${file} leaked content`);
+    assert.ok(!/DATABASE_URL|DEVICE_KEY|GEMINI_API_KEY|postgres:\/\//.test(response.body), `${file} leaked content`);
   }
 });
 

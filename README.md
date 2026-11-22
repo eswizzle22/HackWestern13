@@ -1,5 +1,15 @@
 # CircaAir prototype
 
+## Repository structure
+
+- `app.js` - shared application state, routing shell, data engine, events, and live-data polling
+- `pages/login.js` - login and demo-access page
+- `pages/dashboard.js` - dashboard, live readings, chart, and symptom section
+- `pages/onboarding.js` - sensitivity survey
+- `pages/insights.js` - correlations and insight history
+- `pages/device.js` - CircaAir One and device settings
+- `server.js` - static server, Gemini proxy, and temporary live-data API
+
 A dependency-free browser prototype based on the CircaAir project brief. It includes:
 
 - Live dashboard with seeded air quality, light, alignment score, trends, and Gemini-style intervention.
@@ -88,3 +98,24 @@ It should return only:
 ```
 
 If the endpoint is disabled, times out, returns an error, or returns malformed copy, the app uses local fallback suggestions.
+
+## Temporary live-data collector
+
+The dashboard includes a **Start/Stop working** control and a temporary sensor input panel:
+
+1. Start the app with `node server.js` or VS Code's **Run CircaAir** launch configuration.
+2. Open `http://127.0.0.1:8000`.
+3. Choose **Start working** to begin regular dashboard polling.
+4. Enter a CO₂-equivalent value from 300–5000 ppm and a light value from 0–10000 lux.
+5. Choose **Insert live reading** to update the dashboard and chart immediately.
+
+The temporary API is `GET/POST /api/live-data`. A POST accepts:
+
+```json
+{
+  "airPpm": 754,
+  "lux": 530
+}
+```
+
+This collector is intentionally in-memory and will reset when the server restarts. Replace it with hardware polling or a sensor ingestion endpoint when the device is connected.

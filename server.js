@@ -45,6 +45,7 @@ const mimeTypes = {
 };
 
 const recentRequests = new Map();
+let latestLiveData = { airPpm: 612, lux: 420, updatedAt: null };
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -206,6 +207,43 @@ async function handleGemini(request, response) {
   }
 }
 
+async function handleLiveData(request, response) {
+  if (request.method === "GET") {
+    sendJson(response, 200, latestLiveData);
+    return;
+  }
+  if (request.method !== "POST") {
+    response.setHeader("Allow", "GET, POST");
+    sendJson(response, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = await readJson(request);
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+    return;
+  }
+
+  const airPpm = Number(payload.airPpm);
+  const lux = Number(payload.lux);
+  if (
+    !Number.isFinite(airPpm) || airPpm < 300 || airPpm > 5000 ||
+    !Number.isFinite(lux) || lux < 0 || lux > 10000
+  ) {
+    sendJson(response, 400, { error: "Air must be 300–5000 ppm and light must be 0–10000 lux" });
+    return;
+  }
+
+  latestLiveData = {
+    airPpm: Math.round(airPpm),
+    lux: Math.round(lux),
+    updatedAt: new Date().toISOString(),
+  };
+  sendJson(response, 200, latestLiveData);
+}
+
 function serveStatic(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   const pathname = requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname;
@@ -235,6 +273,8 @@ const server = http.createServer((request, response) => {
   const pathname = new URL(request.url, `http://${request.headers.host || "localhost"}`).pathname;
   if (pathname === "/api/gemini-copy") {
     handleGemini(request, response);
+  } else if (pathname === "/api/live-data") {
+    handleLiveData(request, response);
   } else if (pathname === "/api/health") {
     sendJson(response, 200, {
       status: "ok",

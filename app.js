@@ -152,6 +152,11 @@ const state = {
   breakDue: false,
   deviceOnline: true,
   notificationsOpen: false,
+  working: false,
+  updateIntervalMs: 5000,
+  lastDataSync: null,
+  lastAppliedReadingAt: null,
+  lastLiveNotificationAt: 0,
   insightConfig: INSIGHT_CONFIG,
   environmentHistory: simulatedEnvironment,
   symptomLogs: initialSymptomLogs,
@@ -214,7 +219,7 @@ function render() {
         <div class="sidebar-footer"><div class="mini-device"><span class="status-dot"></span><div><strong>CircaAir One</strong><small>Online · synced now</small></div><span>›</span></div><small class="version">CircaAir prototype · v0.1</small></div>
       </aside>
       <main class="main">
-        <header class="topbar"><div><p class="eyebrow">${meta[0]}</p><h1>${meta[1]}</h1></div><div class="top-actions"><span class="live-pill"><span class="status-dot"></span> Live</span><button class="icon-button" data-action="toggle-notifications" aria-label="Notifications" aria-expanded="${state.notificationsOpen}">♢${state.notifications.length ? `<b>${state.notifications.length}</b>` : ""}</button><div class="avatar">AC</div></div></header>
+        <header class="topbar"><div><p class="eyebrow">${meta[0]}</p><h1>${meta[1]}</h1></div><div class="top-actions"><span class="live-pill"><span class="status-dot"></span> ${state.working ? "Receiving" : "Paused"}</span><button class="icon-button" data-action="toggle-notifications" aria-label="Notifications" aria-expanded="${state.notificationsOpen}">♢${state.notifications.length ? `<b>${state.notifications.length}</b>` : ""}</button><div class="avatar">AC</div></div></header>
         <div class="content">${pageContent()}</div>
       </main>
     </div>
@@ -223,46 +228,14 @@ function render() {
 }
 
 function pageContent() {
-  if (state.route === "onboarding") return onboardingPage();
-  if (state.route === "insights") return insightsPage();
-  if (state.route === "device") return devicePage();
-  return dashboardPage();
+  if (state.route === "onboarding") return window.CircaAirPages.onboarding();
+  if (state.route === "insights") return window.CircaAirPages.insights();
+  if (state.route === "device") return window.CircaAirPages.device();
+  return window.CircaAirPages.dashboard();
 }
 
 function loginPage() {
-  const userName = state.user?.name || state.user?.nickname;
-  return `
-    <main class="auth-page">
-      <section class="auth-brand-panel" aria-label="CircaAir introduction">
-        <a class="brand auth-brand" href="#login"><span class="brand-mark">◒</span><span>circa<span>air</span></span></a>
-        <div class="auth-visual">
-          <div class="auth-orbit orbit-one"></div>
-          <div class="auth-orbit orbit-two"></div>
-          <div class="auth-sun"><span>☀</span></div>
-          <div class="auth-status-card">
-            <span class="status-dot"></span>
-            <div><strong>Space is in balance</strong><small>Air and light are aligned</small></div>
-          </div>
-        </div>
-        <div class="auth-quote"><p class="eyebrow">YOUR ENVIRONMENTAL GUARDIAN</p><h1>A calmer space starts with awareness.</h1></div>
-      </section>
-      <section class="auth-form-panel">
-        <div class="auth-card">
-          <p class="eyebrow">WELCOME TO CIRCAAIR</p>
-          <h2>${userName ? `Welcome, ${escapeHtml(userName)}` : "Sign in to your space"}</h2>
-          <p class="auth-lede">${state.demoMode ? "Explore the protected prototype without an account." : "Use Auth0 to securely access your personal environment, insights, and CircaAir One."}</p>
-          <button class="auth-primary" type="button" data-auth-action="login">
-            <span class="auth-button-mark">◒</span>
-            <span>${state.authReady ? "Continue with Auth0" : "Prepare secure sign in"}</span>
-            <span aria-hidden="true">→</span>
-          </button>
-          ${state.authConfigured ? "" : `<p class="auth-config-note"><strong>Demo mode</strong> · Add your Auth0 domain and client ID in <code>index.html</code> to enable secure login.</p>`}
-          <div class="auth-divider"><span>or</span></div>
-          <button class="auth-demo" type="button" data-auth-action="demo">Explore the demo</button>
-          <p class="auth-privacy">By continuing, you agree to CircaAir’s privacy and use policies.</p>
-        </div>
-      </section>
-    </main>`;
+  return window.CircaAirPages.login();
 }
 
 function escapeHtml(value) {
@@ -497,102 +470,6 @@ function bindLoginEvents() {
   });
 }
 
-function dashboardPage() {
-  const chartSamples = getChartData(state.selectedRange);
-  const chartLines = buildChartLines(chartSamples);
-  const chartLabels = getChartAxisLabels(state.selectedRange);
-  return `
-    <section class="hero-row"><div><p class="date-label">TUESDAY, OCTOBER 24 · 9:42 AM</p><h2>Your space is supporting you.</h2><p class="muted">Both air and light are aligned with your morning routine.</p></div><button class="outline-button" data-action="log-symptom">＋ Log a symptom</button></section>
-    <section class="symptom-section" id="symptom-log" aria-labelledby="symptom-heading">
-      <div class="symptom-heading"><div><p class="section-kicker">QUICK CHECK-IN</p><h3 id="symptom-heading">Log a symptom</h3></div><p>Tap what you notice. CircaAir will look for patterns.</p></div>
-      <div class="symptom-buttons">
-        ${[
-          ["Headache", "◌"],
-          ["Eye strain", "☼"],
-          ["Brain fog", "≋"],
-          ["Fatigue", "◒"],
-          ["Irritated eyes", "◉"],
-          ["Poor sleep", "☾"],
-        ].map(([label, icon]) => `<button type="button" class="symptom-button" data-symptom="${label}"><span>${icon}</span>${label}</button>`).join("")}
-      </div>
-    </section>
-    <section class="score-card">
-      <div class="score-copy"><div class="section-kicker">CIRCADIAN ALIGNMENT</div><div class="score-line"><strong>${state.score}</strong><span>/ 100</span><span class="good-tag">Excellent</span></div><p>Your environment is in a healthy range for focus right now.</p><div class="score-track"><span style="width:${state.score}%"></span></div><div class="scale"><span>Needs attention</span><span>Optimal</span></div></div>
-      <div class="orb"><div class="orb-inner"><span>☀</span><small>Morning<br/>focus</small></div></div>
-      <div class="score-meta"><div><span>Last updated</span><strong>Just now</strong></div><div><span>Profile confidence</span><strong>85% <a href="#insights">View insights →</a></strong></div></div>
-    </section>
-    <section class="section-head"><div><p class="section-kicker">RIGHT NOW</p><h3>Environmental snapshot</h3></div><span class="sync-text"><span class="status-dot"></span> Synced from CircaAir One</span></section>
-    <section class="metric-grid">
-      <article class="metric-card air-card"><div class="metric-header"><div class="metric-icon">≋</div><span class="good-tag">Good</span></div><p class="metric-label">AIR QUALITY</p><div class="metric-value"><strong>${state.air}</strong><span>ppm CO₂ eq.</span></div><p class="metric-note">Comfortable for focus · <b>Low VOCs</b></p><div class="sparkline air-spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-      <article class="metric-card light-card"><div class="metric-header"><div class="metric-icon">☼</div><span class="good-tag">Aligned</span></div><p class="metric-label">AMBIENT LIGHT</p><div class="metric-value"><strong>${state.lux}</strong><span>lux</span></div><p class="metric-note">Ideal for morning focus · <b>Soft daylight</b></p><div class="sparkline light-spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-      <article class="metric-card break-card"><div class="metric-header"><div class="metric-icon">☕</div><span class="break-tag">In 18 min</span></div><p class="metric-label">NEXT BREAK</p><div class="metric-value"><strong>10:00</strong><span>AM</span></div><p class="metric-note">You’ve been focused for <b>32 minutes</b></p><button class="text-button" data-action="start-break">Start break timer →</button></article>
-    </section>
-    <section class="section-head chart-head"><div><p class="section-kicker">ENVIRONMENTAL TRENDS</p><h3>How your space has felt</h3></div><div class="range-tabs">${["15m","6h","24h","7d"].map(r => `<button class="${state.selectedRange === r ? "selected" : ""}" data-range="${r}">${r}</button>`).join("")}</div></section>
-    <section class="chart-card"><div class="chart-legend"><span><i class="legend-air"></i> Air quality</span><span><i class="legend-light"></i> Light level</span><span class="chart-note">${escapeHtml(state.selectedRange)} window</span></div><div class="chart"><div class="ideal-band"></div><span class="y-label top">800</span><span class="y-label mid">500</span><span class="y-label bottom">200</span><svg viewBox="0 0 760 220" preserveAspectRatio="none" role="img" aria-label="Environmental trends chart for ${escapeHtml(state.selectedRange)}"><path class="grid-line" d="M0 55H760M0 110H760M0 165H760"/><path class="light-line" d="${chartLines.light}"/><path class="air-line" d="${chartLines.air}"/></svg><div class="x-labels">${chartLabels.map(label => `<span>${escapeHtml(label)}</span>`).join("")}</div></div></section>
-    <aside class="intervention"><div class="intervention-icon">✦</div><div><p class="section-kicker">${state.geminiStatus === "generated" ? "GEMINI SUGGESTION" : "FALLBACK SUGGESTION"}</p><h3>${escapeHtml(state.generatedCopy?.intervention || "Keep logging symptoms")}</h3><p>${escapeHtml(state.generatedCopy?.detail || "Continue for a few more logs to improve pattern confidence.")}</p><small>Pattern support only — not a medical diagnosis or proven cause.</small></div><button class="close-intervention" data-action="dismiss">×</button></aside>`;
-}
-
-function onboardingPage() {
-  return `<section class="survey-wrap"><div class="survey-intro"><span class="large-mark">◒</span><p class="eyebrow">A LITTLE ABOUT YOU</p><h2>Make CircaAir<br/><em>personal.</em></h2><p>Tell us what your body notices first. We’ll use this to tune your alerts from day one.</p><div class="survey-progress"><span class="filled"></span><span class="filled"></span><span></span></div><small>Step 2 of 3 · Sensitivities</small></div><form class="survey-card" id="survey-form"><div class="step-count">02 <span>/ 03</span></div><h3>What are you sensitive to?</h3><p class="muted">Choose a sensitivity level for each. You can always change these later.</p><div class="sensitivity-list">${[["Bright or harsh light","Glare, screens, or direct sun","high"],["Dim or flickering rooms","Low light or inconsistent lighting","medium"],["Stuffy air","Feeling foggy in poorly ventilated spaces","high"],["Strong odors / VOCs","Perfume, cleaning products, or chemicals","medium"]].map((x,i) => `<div class="sensitivity-row"><div class="sense-icon">${["☼","◐","≋","✧"][i]}</div><div><strong>${x[0]}</strong><small>${x[1]}</small></div><select aria-label="${x[0]}"><option ${x[2] === "low" ? "selected" : ""}>Low</option><option ${x[2] === "medium" ? "selected" : ""}>Medium</option><option ${x[2] === "high" ? "selected" : ""}>High</option></select></div>`).join("")}</div><button class="primary-button" type="submit">Continue <span>→</span></button><button class="skip-button" type="button" data-action="skip-survey">Skip for now</button></form></section>`;
-}
-
-function insightsPage() {
-  const topCorrelations = state.correlations;
-  const profileConfidence = topCorrelations.length
-    ? Math.round(topCorrelations.reduce((sum, item) => sum + item.confidence, 0) / topCorrelations.length)
-    : 0;
-  const triggerRows = topCorrelations.length
-    ? topCorrelations.slice(0, 3).map((item, index) => `
-      <div class="trigger">
-        <span class="trigger-rank">${String(index + 1).padStart(2, "0")}</span>
-        <div class="trigger-bar"><b>${escapeHtml(item.title)}</b><span>${escapeHtml(item.description)}</span><i><em style="width:${item.confidence}%"></em></i></div>
-        <strong>${item.confidence}%</strong>
-      </div>`).join("")
-    : `<p class="muted">No confidence-qualified correlation yet. Minimum: ${INSIGHT_CONFIG.minimumLogs} symptom logs.</p>`;
-  const top = topCorrelations[0];
-  const linkedEvents = top?.linkedEvents || [];
-  const historyRows = linkedEvents.slice(0, 4).map(event => {
-    const date = new Date(event.log.timestamp);
-    return `<div>
-      <span class="history-time">${date.toLocaleDateString([], { month: "short", day: "numeric" }).toUpperCase()} · ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-      <b>${escapeHtml(event.log.symptom)} · severity ${event.log.severity}/${INSIGHT_CONFIG.symptomSeverityScale}</b>
-      <span>${escapeHtml(top.description)} in the prior ${INSIGHT_CONFIG.lookbackMinutes / 60} hours</span>
-    </div>`;
-  }).join("") || `<div><span class="history-time">WAITING</span><b>Keep logging</b><span>No threshold-qualified event in this window.</span></div>`;
-
-  return `<section class="hero-row">
-    <div><p class="date-label">YOUR PERSONAL PROFILE</p><h2>Patterns worth knowing.</h2><p class="muted">Calculated from your logs and simulated environmental history.</p></div>
-    <span class="confidence-badge">✦ ${profileConfidence}% confidence</span>
-  </section>
-  <section class="insight-grid">
-    <article class="panel confidence-panel">
-      <div class="panel-title"><div><p class="section-kicker">PROFILE CONFIDENCE</p><h3>${profileConfidence >= INSIGHT_CONFIG.minimumConfidence ? "Calibrating" : "Baseline"}</h3></div><div class="confidence-ring"><strong>${profileConfidence}</strong><small>%</small></div></div>
-      <div class="confidence-bar"><span style="width:${profileConfidence}%"></span></div>
-      <p class="muted">Based on <b>${state.logs} symptom logs</b>, a ${INSIGHT_CONFIG.lookbackMinutes}-minute window, and simulated 7-day environmental data.</p>
-      <div class="stage-row"><span>Baseline</span><b>Calculated correlation</b></div>
-    </article>
-    <article class="panel">
-      <div class="panel-title"><div><p class="section-kicker">${state.geminiStatus === "generated" ? "GEMINI ANALYSIS" : "CALCULATED ANALYSIS"}</p><h3>Your top correlations</h3></div><span class="spark-icon">✦</span></div>
-      ${triggerRows}
-    </article>
-  </section>
-  <p class="correlation-disclaimer"><strong>Correlation is not medical causation.</strong> These patterns are observation-based support and may reflect other factors.</p>
-  <section class="section-head"><div><p class="section-kicker">LAGGED CORRELATION</p><h3>Before your symptoms</h3></div><button class="outline-button small" data-action="log-symptom">＋ Log symptom</button></section>
-  <section class="panel correlation-panel">
-    <div class="correlation-summary">
-      <div class="correlation-stat"><strong>${INSIGHT_CONFIG.lookbackMinutes / 60}h</strong><span>lookback window</span></div>
-      <div class="correlation-stat"><strong>${linkedEvents.length}</strong><span>linked events</span></div>
-      <div class="correlation-copy"><span class="warning-dot"></span><p>${top ? `Symptoms appeared with <b>${escapeHtml(top.description)}</b> in the configured window.` : "Keep logging until the minimum threshold is reached."}</p></div>
-    </div>
-    <div class="history-list">${historyRows}</div>
-  </section>`;
-}
-
-function devicePage() {
-  const pixels = Array.from({length: 104}, (_, i) => `<i class="${[8,9,10,19,20,21,30,31,32,33,42,43,52,53,54,64,65,66,75,76,77,86,87,88,89,98,99,100].includes(i) ? "on" : ""}"></i>`).join("");
-  return `<section class="hero-row"><div><p class="date-label">CONNECTED HARDWARE</p><h2>Your calm, on the desk.</h2><p class="muted">Manage your CircaAir One and tailor how it supports you.</p></div><span class="online-badge"><span class="status-dot"></span> Online</span></section><section class="device-grid"><article class="panel device-preview"><div class="panel-title"><div><p class="section-kicker">LED MATRIX MIRROR</p><h3>CircaAir One</h3></div><span class="device-id">CA-0018</span></div><div class="matrix-shell"><div class="matrix">${pixels}</div></div><p class="matrix-caption">Showing <b>Good air + light</b> pattern</p><button class="outline-button" data-action="test-pattern">Send test pattern</button></article><article class="panel settings-panel"><p class="section-kicker">DEVICE STATUS</p><div class="setting-row"><span>Air quality sensor</span><b class="setting-good">Connected</b></div><div class="setting-row"><span>Light sensor</span><b class="setting-good">Connected</b></div><div class="setting-row"><span>Last sync</span><b>Just now</b></div><hr/><p class="section-kicker">BREAK REMINDERS</p><label class="setting-control"><span>Focus interval <small>Time between break nudges</small></span><select><option>45 minutes</option><option>50 minutes</option><option>60 minutes</option></select></label><label class="setting-control"><span>Eye rest mode <small>Shorter intervals for screen time</small></span><input type="checkbox" checked /></label><hr/><p class="section-kicker">CIRCadian SCHEDULE</p><div class="time-pair"><label>Wake up<input type="time" value="07:00" /></label><label>Wind down<input type="time" value="22:00" /></label></div></article></section>`;
-}
-
 function showToast(message) {
   const region = document.querySelector("#toast-region");
   region.innerHTML = `<div class="toast"><span>✦</span>${message}<button data-action="dismiss">×</button></div>`;
@@ -649,6 +526,18 @@ function bindEvents() {
   }));
   document.querySelectorAll("[data-action]").forEach(el => el.addEventListener("click", event => {
     const action = event.currentTarget.dataset.action;
+    if (action === "start-working") {
+      state.working = true;
+      state.lastDataSync = new Date().toISOString();
+      pollLiveData();
+      render();
+      showToast("Live data collection started.");
+    }
+    if (action === "stop-working") {
+      state.working = false;
+      render();
+      showToast("Live data collection stopped.");
+    }
     if (action === "log-symptom") {
       if (state.route !== "dashboard") {
         location.hash = "dashboard";
@@ -666,39 +555,125 @@ function bindEvents() {
   }));
   const form = document.querySelector("#survey-form");
   if (form) form.addEventListener("submit", event => { event.preventDefault(); showToast("Your sensitivity profile is saved."); setTimeout(() => { location.hash = "dashboard"; }, 800); });
+  const liveDataForm = document.querySelector("#live-data-form");
+  if (liveDataForm) liveDataForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const data = new FormData(liveDataForm);
+    const airPpm = Number(data.get("airPpm"));
+    const lux = Number(data.get("lux"));
+    if (!Number.isFinite(airPpm) || airPpm < 300 || airPpm > 5000 ||
+      !Number.isFinite(lux) || lux < 0 || lux > 10000) {
+      showToast("Enter 300–5000 ppm and 0–10000 lux.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/live-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ airPpm, lux }),
+      });
+      if (!response.ok) throw new Error(`Live data rejected (${response.status})`);
+      const reading = await response.json();
+      applyLiveReading(reading);
+      showToast(`Live reading inserted: ${reading.airPpm} ppm, ${reading.lux} lux.`);
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+}
+
+function detectLiveEnvironmentNotifications(previousAir, previousLux) {
+  const airRise = state.air - previousAir;
+  const lightDrop = previousLux - state.lux;
+  const now = Date.now();
+  const cooldownElapsed = now - state.lastLiveNotificationAt >= 30000;
+  if (!cooldownElapsed) return;
+
+  if (airRise >= INSIGHT_CONFIG.airRisePpm) {
+    addLiveNotification(
+      "warning",
+      "Air quality changed",
+      `CO₂-equivalent rose ${airRise} ppm, from ${previousAir} to ${state.air} ppm.`
+    );
+  } else if (lightDrop >= 150 || (previousLux >= 200 && state.lux < 200)) {
+    addLiveNotification(
+      "warning",
+      "Light level dropped",
+      `Ambient light dropped ${lightDrop} lux, from ${previousLux} to ${state.lux} lux.`
+    );
+  }
+}
+
+function addLiveNotification(type, title, message) {
+  state.lastLiveNotificationAt = Date.now();
+  const isDuplicate = state.notifications.some(notification =>
+    notification.title === title && notification.message === message
+  );
+  if (isDuplicate) return;
+
+  state.notifications.unshift({ type, title, message });
+  showToast(`${title} — ${message}`);
+  if (state.route === "dashboard") render();
 }
 
 window.addEventListener("hashchange", () => {
   state.route = location.hash.slice(1) || (state.authenticated ? "dashboard" : "login");
   render();
 });
-setInterval(() => {
-  if (state.route === "dashboard") {
-    state.air += Math.round((Math.random() - 0.5) * 14);
-    state.lux += Math.round((Math.random() - 0.5) * 30);
-    state.environmentHistory.push({
-      timestamp: new Date().toISOString(),
-      airPpm: state.air,
-      lux: state.lux,
-    });
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    state.environmentHistory = state.environmentHistory.filter(sample =>
-      new Date(sample.timestamp).getTime() >= cutoff
-    );
-    const air = document.querySelector(".air-card .metric-value strong");
-    const lux = document.querySelector(".light-card .metric-value strong");
-    if (air) air.textContent = state.air;
-    if (lux) lux.textContent = state.lux;
-    const chartCard = document.querySelector(".chart-card");
-    if (chartCard) {
-      const chartLines = buildChartLines(getChartData(state.selectedRange));
-      chartCard.querySelector(".light-line")?.setAttribute("d", chartLines.light);
-      chartCard.querySelector(".air-line")?.setAttribute("d", chartLines.air);
-      const chartNote = chartCard.querySelector(".chart-note");
-      if (chartNote) chartNote.textContent = `${state.selectedRange} window`;
-    }
+function appendLiveReading(reading) {
+  const previousAir = state.air;
+  const previousLux = state.lux;
+  state.air = reading.airPpm;
+  state.lux = reading.lux;
+  state.lastDataSync = reading.updatedAt || new Date().toISOString();
+  state.environmentHistory.push({
+    timestamp: state.lastDataSync,
+    airPpm: state.air,
+    lux: state.lux,
+  });
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  state.environmentHistory = state.environmentHistory.filter(sample =>
+    new Date(sample.timestamp).getTime() >= cutoff
+  );
+  return { previousAir, previousLux };
+}
+
+function applyLiveReading(reading) {
+  const readingTime = reading.updatedAt || null;
+  if (readingTime && readingTime === state.lastAppliedReadingAt) return;
+  const { previousAir, previousLux } = appendLiveReading(reading);
+  if (readingTime) state.lastAppliedReadingAt = readingTime;
+  detectLiveEnvironmentNotifications(previousAir, previousLux);
+  if (state.route !== "dashboard") return;
+  const air = document.querySelector(".air-card .metric-value strong");
+  const lux = document.querySelector(".light-card .metric-value strong");
+  if (air) air.textContent = state.air;
+  if (lux) lux.textContent = state.lux;
+  const syncText = document.querySelector(".live-data-note");
+  if (syncText) syncText.textContent = `Temporary manual collector · last sync: ${new Date(state.lastDataSync).toLocaleTimeString()}`;
+  const chartCard = document.querySelector(".chart-card");
+  if (chartCard) {
+    const chartLines = buildChartLines(getChartData(state.selectedRange));
+    chartCard.querySelector(".light-line")?.setAttribute("d", chartLines.light);
+    chartCard.querySelector(".air-line")?.setAttribute("d", chartLines.air);
   }
-}, 5000);
+}
+
+async function pollLiveData() {
+  if (!state.working) return;
+  try {
+    const response = await fetch("/api/live-data", { cache: "no-store" });
+    if (!response.ok) throw new Error("Live data unavailable");
+    const reading = await response.json();
+    if (reading.updatedAt) applyLiveReading(reading);
+  } catch (error) {
+    console.warn(error.message);
+  }
+}
+
+setInterval(() => {
+  if (state.working) pollLiveData();
+}, state.updateIntervalMs);
 
 async function initializeAuth0() {
   const config = window.CIRCAAIR_AUTH0_CONFIG || {};

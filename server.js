@@ -32,6 +32,7 @@ const geminiModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const geminiApiUrl =
   process.env.GEMINI_API_URL ||
   `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`;
+const geminiTimeoutMs = Number(process.env.GEMINI_TIMEOUT_MS || 20000);
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -45,7 +46,8 @@ const mimeTypes = {
 };
 
 const recentRequests = new Map();
-let latestLiveData = { airPpm: 612, lux: 420, updatedAt: null };
+let latestLiveData = { airRaw: 612, lightRaw: 420, updatedAt: null };
+const sessionStore = new Map();
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -161,7 +163,7 @@ async function handleGemini(request, response) {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const timeoutId = setTimeout(() => controller.abort(), geminiTimeoutMs);
 
   try {
     const upstream = await fetch(geminiApiUrl, {
@@ -177,7 +179,7 @@ async function handleGemini(request, response) {
         }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 180,
+          maxOutputTokens: 512,
           responseMimeType: "application/json",
         },
       }),
@@ -196,7 +198,14 @@ async function handleGemini(request, response) {
       ?.map(part => part.text || "")
       .join("")
       .trim();
-    if (!text) throw new Error("Empty Gemini response");
+    if (!text) {
+      const candidate = upstreamJson.candidates?.[0];
+      const finishReason = candidate?.finishReason || "unknown";
+      const blockReason = upstreamJson.promptFeedback?.blockReason;
+      throw new Error(
+        `Empty Gemini response (finishReason=${finishReason}${blockReason ? `, blockReason=${blockReason}` : ""})`
+      );
+    }
 
     sendJson(response, 200, parseGeneratedJson(text));
   } catch (error) {
@@ -226,22 +235,62 @@ async function handleLiveData(request, response) {
     return;
   }
 
-  const airPpm = Number(payload.airPpm);
-  const lux = Number(payload.lux);
+  const airRaw = Number(payload.airRaw ?? payload.airPpm);
+  const lightRaw = Number(payload.lightRaw ?? payload.lux);
   if (
-    !Number.isFinite(airPpm) || airPpm < 300 || airPpm > 5000 ||
-    !Number.isFinite(lux) || lux < 0 || lux > 10000
+    !Number.isFinite(airRaw) || airRaw < 0 || airRaw > 1023 ||
+    !Number.isFinite(lightRaw) || lightRaw < 0 || lightRaw > 1023
   ) {
-    sendJson(response, 400, { error: "Air must be 300–5000 ppm and light must be 0–10000 lux" });
+    sendJson(response, 400, { error: "Grove sensor readings must use 10-bit ADC values from 0–1023" });
     return;
   }
 
   latestLiveData = {
-    airPpm: Math.round(airPpm),
-    lux: Math.round(lux),
+    airRaw: Math.round(airRaw),
+    lightRaw: Math.round(lightRaw),
     updatedAt: new Date().toISOString(),
   };
   sendJson(response, 200, latestLiveData);
+}
+
+async function handleSessionData(request, response) {
+  if (request.method === "GET") {
+    const sessions = Array.from(sessionStore.values())
+      .sort((a, b) => new Date(b.endedAt) - new Date(a.endedAt))
+      .slice(0, 20);
+    sendJson(response, 200, { sessions });
+    return;
+  }
+  if (request.method !== "POST") {
+    response.setHeader("Allow", "GET, POST");
+    sendJson(response, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = await readJson(request);
+  } catch (error) {
+    sendJson(response, 400, { error: error.message });
+    return;
+  }
+
+  if (!payload.sessionId || !Array.isArray(payload.readings) || !Array.isArray(payload.symptoms)) {
+    sendJson(response, 400, { error: "Invalid session data" });
+    return;
+  }
+  const session = {
+    sessionId: payload.sessionId,
+    startedAt: payload.startedAt,
+    endedAt: payload.endedAt || new Date().toISOString(),
+    readings: payload.readings.slice(-500),
+    symptoms: payload.symptoms.slice(-500),
+    thresholds: payload.thresholds,
+    sensitivityProfile: payload.sensitivityProfile,
+    deviceSpecs: payload.deviceSpecs,
+  };
+  sessionStore.set(session.sessionId, session);
+  sendJson(response, 201, session);
 }
 
 function serveStatic(request, response) {
@@ -275,6 +324,8 @@ const server = http.createServer((request, response) => {
     handleGemini(request, response);
   } else if (pathname === "/api/live-data") {
     handleLiveData(request, response);
+  } else if (pathname === "/api/session-data") {
+    handleSessionData(request, response);
   } else if (pathname === "/api/health") {
     sendJson(response, 200, {
       status: "ok",

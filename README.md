@@ -62,9 +62,9 @@ The prototype uses simulated 7-day sensor history plus seeded symptom logs for t
 - Minimum logs: 5
 - Minimum displayed confidence: 60%
 - Symptom severity: 1–5
-- Air threshold: 120 ppm rise
-- Bright-light threshold: 600 lux
-- Wind-down threshold: 200 lux after 8 PM
+- Grove air-sensor warning threshold: 700/1023 qualitative ADC
+- Grove harsh-light warning threshold: 700/1023 analog ADC
+- Grove dim-light threshold: 300/1023 analog ADC after 8 PM
 
 These values are calculated from the in-browser simulated data. Correlations are observations, not evidence of medical causation.
 
@@ -106,16 +106,25 @@ The dashboard includes a **Start/Stop working** control and a temporary sensor i
 1. Start the app with `node server.js` or VS Code's **Run CircaAir** launch configuration.
 2. Open `http://127.0.0.1:8000`.
 3. Choose **Start working** to begin regular dashboard polling.
-4. Enter a CO₂-equivalent value from 300–5000 ppm and a light value from 0–10000 lux.
+4. Enter a 10-bit Grove air-sensor reading and light-sensor reading from 0–1023.
 5. Choose **Insert live reading** to update the dashboard and chart immediately.
 
 The temporary API is `GET/POST /api/live-data`. A POST accepts:
 
 ```json
 {
-  "airPpm": 754,
-  "lux": 530
+  "airRaw": 754,
+  "lightRaw": 530
 }
 ```
 
 This collector is intentionally in-memory and will reset when the server restarts. Replace it with hardware polling or a sensor ingestion endpoint when the device is connected.
+
+## Working sessions and personalized thresholds
+
+- Starting a working session captures sensor readings and 1–5 symptom severity logs.
+- The sensitivity survey calibrates air, bright-light, dim-light, and VOC thresholds. Until it is completed, default thresholds are used.
+- Thresholds are recalculated at session start, after symptom logs and survey changes, and once every hour.
+- The Gemini context includes the sensitivity profile, recent symptom severity, threshold profile, and device specifications.
+- Stopping a session uploads it through `POST /api/session-data`; the insights page pulls recent sessions through `GET /api/session-data`.
+- Session uploads are retained locally in browser storage and in the prototype server's in-memory session store.

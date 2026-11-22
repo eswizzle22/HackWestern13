@@ -2,6 +2,13 @@ window.CircaAirPages = window.CircaAirPages || {};
 
 window.CircaAirPages.insights = function insightsPage() {
   const topCorrelations = state.correlations;
+  const recentSessions = state.sessionStore.slice(0, 3);
+  const sessionRows = recentSessions.length
+    ? recentSessions.map(session => {
+      const start = new Date(session.startedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+      return `<div><span class="history-time">${escapeHtml(start)}</span><b>${session.readings?.length || 0} readings · ${session.symptoms?.length || 0} symptoms</b><span>${session.thresholds?.calibrated ? "Calibrated personalized thresholds" : "Default hazard thresholds"}</span></div>`;
+    }).join("")
+    : `<div><span class="history-time">NO SESSIONS</span><b>Start a working session</b><span>Session readings and symptoms will appear here when it ends.</span></div>`;
   const profileConfidence = topCorrelations.length
     ? Math.round(topCorrelations.reduce((sum, item) => sum + item.confidence, 0) / topCorrelations.length)
     : 0;
@@ -41,6 +48,8 @@ window.CircaAirPages.insights = function insightsPage() {
     </article>
   </section>
   <p class="correlation-disclaimer"><strong>Correlation is not medical causation.</strong> These patterns are observation-based support and may reflect other factors.</p>
+  <section class="section-head"><div><p class="section-kicker">UPLOADED SESSIONS</p><h3>Recent working sessions</h3></div></section>
+  <section class="panel correlation-panel"><div class="history-list">${sessionRows}</div></section>
   <section class="section-head"><div><p class="section-kicker">LAGGED CORRELATION</p><h3>Before your symptoms</h3></div><button class="outline-button small" data-action="log-symptom">＋ Log symptom</button></section>
   <section class="panel correlation-panel">
     <div class="correlation-summary">

@@ -3,9 +3,11 @@ const INSIGHT_CONFIG = {
   minimumLogs: 5,
   minimumConfidence: 60,
   symptomSeverityScale: 5,
-  airRisePpm: 120,
-  brightLux: 600,
-  windDownLux: 200,
+  airRiseRaw: 120,
+  badAirRaw: 700,
+  harshLightRaw: 700,
+  dimLightRaw: 300,
+  adcMaximum: 1023,
 };
 
 const now = Date.now();
@@ -16,14 +18,14 @@ function createSimulatedEnvironment() {
   for (let minutes = 7 * 24 * 60; minutes >= 0; minutes -= 30) {
     const time = minutesAgo(minutes);
     const hour = time.getHours();
-    const dayWave = hour >= 7 && hour <= 18 ? 520 : 380;
+    const dayWave = hour >= 7 && hour <= 18 ? 560 : 400;
     const syntheticNoise = ((minutes * 37) % 90) - 45;
-    const eventRise = minutes >= 165 && minutes <= 195 ? 155 : 0;
+    const eventRise = minutes >= 165 && minutes <= 195 ? 180 : 0;
     const lateLightRise = hour >= 20 && hour <= 23 ? 90 : 0;
     samples.push({
       timestamp: time.toISOString(),
-      airPpm: Math.max(380, dayWave + syntheticNoise + eventRise),
-      lux: hour >= 7 && hour <= 18
+      airRaw: Math.max(260, Math.min(1023, dayWave + syntheticNoise + eventRise)),
+      lightRaw: hour >= 7 && hour <= 18
         ? Math.max(300, 620 + ((minutes * 53) % 180) + lateLightRise)
         : Math.max(40, 210 + ((minutes * 29) % 180) + lateLightRise),
     });
@@ -33,23 +35,23 @@ function createSimulatedEnvironment() {
 
 function createSimulatedSymptomLogs() {
   return [
-    { symptom: "Headache", offsetMinutes: 190, severity: 3, airPpm: 154 },
-    { symptom: "Headache", offsetMinutes: 1560, severity: 4, airPpm: 148 },
-    { symptom: "Brain fog", offsetMinutes: 480, severity: 3, airPpm: 136 },
-    { symptom: "Eye strain", offsetMinutes: 300, severity: 4, lux: 760 },
-    { symptom: "Irritated eyes", offsetMinutes: 1320, severity: 3, lux: 710 },
-    { symptom: "Poor sleep", offsetMinutes: 260, severity: 4, lux: 260 },
-    { symptom: "Fatigue", offsetMinutes: 920, severity: 2, airPpm: 130 },
-    { symptom: "Brain fog", offsetMinutes: 2200, severity: 3, airPpm: 145 },
-    { symptom: "Eye strain", offsetMinutes: 2880, severity: 2, lux: 680 },
-    { symptom: "Poor sleep", offsetMinutes: 3900, severity: 5, lux: 240 },
+    { symptom: "Headache", offsetMinutes: 190, severity: 3, airRaw: 754 },
+    { symptom: "Headache", offsetMinutes: 1560, severity: 4, airRaw: 748 },
+    { symptom: "Brain fog", offsetMinutes: 480, severity: 3, airRaw: 736 },
+    { symptom: "Eye strain", offsetMinutes: 300, severity: 4, lightRaw: 760 },
+    { symptom: "Irritated eyes", offsetMinutes: 1320, severity: 3, lightRaw: 710 },
+    { symptom: "Poor sleep", offsetMinutes: 260, severity: 4, lightRaw: 260 },
+    { symptom: "Fatigue", offsetMinutes: 920, severity: 2, airRaw: 730 },
+    { symptom: "Brain fog", offsetMinutes: 2200, severity: 3, airRaw: 745 },
+    { symptom: "Eye strain", offsetMinutes: 2880, severity: 2, lightRaw: 680 },
+    { symptom: "Poor sleep", offsetMinutes: 3900, severity: 5, lightRaw: 240 },
   ].map((item, index) => ({
     id: `sim-${index + 1}`,
     symptom: item.symptom,
     severity: item.severity,
     timestamp: minutesAgo(item.offsetMinutes).toISOString(),
     simulated: true,
-    context: { airPpm: item.airPpm, lux: item.lux },
+    context: { airRaw: item.airRaw, lightRaw: item.lightRaw },
   }));
 }
 
@@ -58,28 +60,28 @@ function calculateCorrelations(symptomLogs, environment) {
     {
       id: "air-rise",
       title: "Air quality rise",
-      description: "CO₂-equivalent rise of 120+ ppm",
+      description: "Air-sensor raw rise of 120+ ADC units",
       symptomTypes: ["Headache", "Brain fog", "Fatigue"],
-      measure: "airPpm",
-      threshold: (sample, prior) => prior && sample.airPpm - prior.airPpm >= INSIGHT_CONFIG.airRisePpm,
+      measure: "airRaw",
+      threshold: (sample, prior) => prior && sample.airRaw - prior.airRaw >= INSIGHT_CONFIG.airRiseRaw,
     },
     {
       id: "bright-light",
       title: "Bright or harsh light",
-      description: "Light at or above 600 lux",
+      description: "Harsh light at or above 700 ADC units",
       symptomTypes: ["Eye strain", "Irritated eyes"],
-      measure: "lux",
-      threshold: (sample) => sample.lux >= INSIGHT_CONFIG.brightLux,
+      measure: "lightRaw",
+      threshold: (sample) => sample.lightRaw >= INSIGHT_CONFIG.harshLightRaw,
     },
     {
       id: "late-light",
       title: "Late-day brightness",
-      description: "Light at or above 200 lux near wind-down",
+      description: "Light at or above 300 ADC units near wind-down",
       symptomTypes: ["Poor sleep"],
-      measure: "lux",
+      measure: "lightRaw",
       threshold: (sample) => {
         const hour = new Date(sample.timestamp).getHours();
-        return hour >= 20 && sample.lux >= INSIGHT_CONFIG.windDownLux;
+        return hour >= 20 && sample.lightRaw >= INSIGHT_CONFIG.dimLightRaw;
       },
     },
   ];
@@ -133,8 +135,88 @@ function calculateCorrelations(symptomLogs, environment) {
   ).sort((a, b) => b.confidence - a.confidence);
 }
 
+function sensitivityWeight(level) {
+  return level === "High" ? 1.25 : level === "Low" ? 0.75 : 1;
+}
+
+function calculatePersonalizedThresholds() {
+  const recentLogs = state.symptomLogs
+    .filter(log => !log.simulated)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, 10);
+  const averageSeverity = recentLogs.length
+    ? recentLogs.reduce((sum, log) => sum + log.severity, 0) / recentLogs.length
+    : 0;
+  const symptomFactor = 1 - Math.min(0.25, (averageSeverity / 5) * 0.25);
+
+  if (!state.surveyCompleted) {
+    return {
+      calibrated: false,
+      airMinRaw: INSIGHT_CONFIG.badAirRaw,
+      harshLightMinRaw: INSIGHT_CONFIG.harshLightRaw,
+      dimLightMaxRaw: INSIGHT_CONFIG.dimLightRaw,
+      profileSource: "default",
+    };
+  }
+
+  const brightWeight = sensitivityWeight(state.sensitivityProfile.brightLight);
+  const dimWeight = sensitivityWeight(state.sensitivityProfile.dimLight);
+  const airWeight = sensitivityWeight(state.sensitivityProfile.stuffyAir);
+  const odorWeight = sensitivityWeight(state.sensitivityProfile.odors);
+  const refreshFactor = state.deviceSpecs.refreshRateHz >= 120 ? 0.95 : 1;
+  const displayFactor = state.deviceSpecs.displaySizeInches >= 32 ? 1.05 : 1;
+
+  return {
+    calibrated: true,
+    airMinRaw: Math.round(INSIGHT_CONFIG.badAirRaw - ((airWeight - 1) * 120) - ((odorWeight - 1) * 60) - ((averageSeverity - 2.5) * 12)),
+    harshLightMinRaw: Math.round((INSIGHT_CONFIG.harshLightRaw / brightWeight) * refreshFactor * displayFactor * symptomFactor),
+    dimLightMaxRaw: Math.round(INSIGHT_CONFIG.dimLightRaw * dimWeight * symptomFactor),
+    profileSource: "sensitivity-survey-symptoms-device",
+  };
+}
+
 const simulatedEnvironment = createSimulatedEnvironment();
 const initialSymptomLogs = createSimulatedSymptomLogs();
+
+const DEFAULT_SENSITIVITY = {
+  brightLight: "Medium",
+  dimLight: "Medium",
+  stuffyAir: "Medium",
+  odors: "Medium",
+};
+
+const DEFAULT_DEVICE_SPECS = {
+  model: "CircaAir One",
+  displaySizeInches: 27,
+  refreshRateHz: 60,
+  adcResolutionBits: 10,
+  adcMaximum: 1023,
+  sensors: {
+    air: "Grove Air Quality Sensor v1.3 (qualitative analog)",
+    light: "Grove Light Sensor (analog)",
+  },
+};
+
+function loadPersisted(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function persist(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.warn(`Could not persist ${key}:`, error);
+  }
+}
+
+const persistedProfile = loadPersisted("circaair-sensitivity-profile", null);
+const persistedSessions = loadPersisted("circaair-sessions", []);
+const persistedDeviceSpecs = loadPersisted("circaair-device-specs", DEFAULT_DEVICE_SPECS);
 
 const state = {
   route: location.hash.slice(1) || "login",
@@ -163,8 +245,21 @@ const state = {
   correlations: [],
   geminiStatus: "fallback",
   generatedCopy: null,
+  sensitivityProfile: persistedProfile || { ...DEFAULT_SENSITIVITY },
+  surveyCompleted: Boolean(persistedProfile),
+  deviceSpecs: persistedDeviceSpecs,
+  thresholds: null,
+  sessionId: null,
+  sessionStartedAt: null,
+  sessionReadings: [],
+  sessionSymptoms: [],
+  pendingSymptom: null,
+  pendingSeverity: 3,
+  profileRecalculatedAt: null,
+  profileRecalculationTimer: null,
+  sessionStore: persistedSessions,
   notifications: [
-    { type: "warning", title: "Air quality rising", message: "CO2 equivalent has risen 120 ppm over the last two hours." },
+    { type: "warning", title: "Air quality rising", message: "The Grove air sensor has risen 120 ADC units over the last two hours." },
     { type: "suggestion", title: "Take a screen break", message: "Your 45-minute focus interval ends in 18 minutes." },
     { type: "suggestion", title: "Great focus window", message: "Light and air quality are aligned for deep work right now." },
   ],
@@ -173,6 +268,7 @@ const state = {
 state.logs = state.symptomLogs.length;
 state.correlations = calculateCorrelations(state.symptomLogs, state.environmentHistory);
 state.generatedCopy = getFallbackCopy();
+state.thresholds = calculatePersonalizedThresholds();
 state.notifications = [
   { type: "warning", title: "Calculated pattern available", message: state.correlations[0]?.description || "Keep logging to establish correlations." },
   { type: "suggestion", title: state.generatedCopy.intervention, message: state.generatedCopy.notification },
@@ -280,8 +376,8 @@ function getChartData(range) {
       const mix = afterTime === beforeTime ? 0 : (targetTime - beforeTime) / (afterTime - beforeTime);
       result.push({
         timestamp: new Date(targetTime).toISOString(),
-        airPpm: Math.round(before.airPpm + (after.airPpm - before.airPpm) * mix),
-        lux: Math.round(before.lux + (after.lux - before.lux) * mix),
+        airRaw: Math.round(before.airRaw + (after.airRaw - before.airRaw) * mix),
+        lightRaw: Math.round(before.lightRaw + (after.lightRaw - before.lightRaw) * mix),
       });
     }
   }
@@ -306,8 +402,8 @@ function buildChartLines(samples) {
   }
 
   return {
-    air: lineFor(sample => sample.airPpm, 200, 800),
-    light: lineFor(sample => sample.lux, 40, 800),
+    air: lineFor(sample => sample.airRaw, 0, 1023),
+    light: lineFor(sample => sample.lightRaw, 0, 1023),
   };
 }
 
@@ -371,9 +467,16 @@ function buildGeminiContext() {
   return {
     symptoms: latestLogs,
     environment: {
-      airBand: state.air >= 800 ? "elevated" : state.air >= 600 ? "moderate" : "low",
-      lightBand: state.lux >= 600 ? "bright" : state.lux >= 200 ? "moderate" : "dim",
+      airBand: state.air >= state.thresholds.airMinRaw ? "bad" : state.air >= 500 ? "moderate" : "low",
+      lightBand: state.lux >= state.thresholds.harshLightMinRaw ? "harsh" : state.lux >= 300 ? "moderate" : "dim",
       timeOfDayBand: new Date().getHours() >= 20 ? "wind-down" : "daytime",
+    },
+    learningProfile: {
+      sensitivitySurveyCompleted: state.surveyCompleted,
+      sensitivities: state.sensitivityProfile,
+      deviceSpecs: state.deviceSpecs,
+      recalculatedAt: state.profileRecalculatedAt,
+      thresholds: state.thresholds,
     },
     correlation: top ? {
       label: top.title,
@@ -500,25 +603,13 @@ function notificationCenter() {
 function bindEvents() {
   document.querySelectorAll("[data-range]").forEach(button => button.addEventListener("click", () => { state.selectedRange = button.dataset.range; render(); }));
   document.querySelectorAll("[data-symptom]").forEach(button => button.addEventListener("click", () => {
-    const symptom = button.dataset.symptom;
-    const severityInput = window.prompt(`Rate ${symptom} severity from 1 (mild) to 5 (high):`, "3");
-    const severity = Number(severityInput);
-    if (!Number.isInteger(severity) || severity < 1 || severity > INSIGHT_CONFIG.symptomSeverityScale) {
-      showToast("Symptom not logged. Enter a severity from 1 to 5.");
-      return;
-    }
-    state.symptomLogs.push({
-      id: `log-${Date.now()}`,
-      symptom,
-      severity,
-      timestamp: new Date().toISOString(),
-      simulated: false,
-      context: { airPpm: state.air, lux: state.lux },
-    });
-    state.logs += 1;
-    state.correlations = calculateCorrelations(state.symptomLogs, state.environmentHistory);
-    generateGeminiCopy();
-    showToast(`${symptom} severity ${severity}/5 logged — comparing the prior ${INSIGHT_CONFIG.lookbackMinutes / 60} hours.`);
+    state.pendingSymptom = button.dataset.symptom;
+    state.pendingSeverity = 3;
+    render();
+  }));
+  document.querySelectorAll("[data-severity]").forEach(button => button.addEventListener("click", () => {
+    state.pendingSeverity = Number(button.dataset.severity);
+    render();
   }));
   document.querySelectorAll("[data-dismiss-notification]").forEach(button => button.addEventListener("click", () => {
     state.notifications.splice(Number(button.dataset.dismissNotification), 1);
@@ -526,8 +617,36 @@ function bindEvents() {
   }));
   document.querySelectorAll("[data-action]").forEach(el => el.addEventListener("click", event => {
     const action = event.currentTarget.dataset.action;
+    if (action === "save-symptom" && state.pendingSymptom) {
+      const symptom = state.pendingSymptom;
+      const severity = state.pendingSeverity;
+      const symptomLog = {
+        id: `log-${Date.now()}`,
+        symptom,
+        severity,
+        timestamp: new Date().toISOString(),
+        simulated: false,
+        context: { airRaw: state.air, lightRaw: state.lux },
+      };
+      state.symptomLogs.push(symptomLog);
+      if (state.working) state.sessionSymptoms.push(symptomLog);
+      state.logs += 1;
+      state.correlations = calculateCorrelations(state.symptomLogs, state.environmentHistory);
+      recalculateLearningProfile();
+      generateGeminiCopy();
+      state.pendingSymptom = null;
+      state.pendingSeverity = 3;
+      render();
+      showToast(`${symptom} severity ${severity}/5 logged — comparing the prior ${INSIGHT_CONFIG.lookbackMinutes / 60} hours.`);
+    }
+    if (action === "cancel-symptom") {
+      state.pendingSymptom = null;
+      state.pendingSeverity = 3;
+      render();
+    }
     if (action === "start-working") {
       state.working = true;
+      startWorkingSession();
       state.lastDataSync = new Date().toISOString();
       pollLiveData();
       render();
@@ -535,6 +654,7 @@ function bindEvents() {
     }
     if (action === "stop-working") {
       state.working = false;
+      stopWorkingSession();
       render();
       showToast("Live data collection stopped.");
     }
@@ -554,28 +674,43 @@ function bindEvents() {
     if (action === "skip-survey") { location.hash = "dashboard"; }
   }));
   const form = document.querySelector("#survey-form");
-  if (form) form.addEventListener("submit", event => { event.preventDefault(); showToast("Your sensitivity profile is saved."); setTimeout(() => { location.hash = "dashboard"; }, 800); });
+  if (form) form.addEventListener("submit", event => {
+    event.preventDefault();
+    const data = new FormData(form);
+    state.sensitivityProfile = {
+      brightLight: data.get("brightLight"),
+      dimLight: data.get("dimLight"),
+      stuffyAir: data.get("stuffyAir"),
+      odors: data.get("odors"),
+    };
+    state.surveyCompleted = true;
+    persist("circaair-sensitivity-profile", state.sensitivityProfile);
+    recalculateLearningProfile();
+    generateGeminiCopy();
+    showToast("Your sensitivity profile is saved. Hazard thresholds recalculated.");
+    setTimeout(() => { location.hash = "dashboard"; }, 800);
+  });
   const liveDataForm = document.querySelector("#live-data-form");
   if (liveDataForm) liveDataForm.addEventListener("submit", async event => {
     event.preventDefault();
     const data = new FormData(liveDataForm);
-    const airPpm = Number(data.get("airPpm"));
-    const lux = Number(data.get("lux"));
-    if (!Number.isFinite(airPpm) || airPpm < 300 || airPpm > 5000 ||
-      !Number.isFinite(lux) || lux < 0 || lux > 10000) {
-      showToast("Enter 300–5000 ppm and 0–10000 lux.");
+    const airRaw = Number(data.get("airRaw"));
+    const lightRaw = Number(data.get("lightRaw"));
+    if (!Number.isFinite(airRaw) || airRaw < 0 || airRaw > 1023 ||
+      !Number.isFinite(lightRaw) || lightRaw < 0 || lightRaw > 1023) {
+      showToast("Enter 0–1023 for both 10-bit Grove sensor readings.");
       return;
     }
     try {
       const response = await fetch("/api/live-data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ airPpm, lux }),
+        body: JSON.stringify({ airRaw, lightRaw }),
       });
       if (!response.ok) throw new Error(`Live data rejected (${response.status})`);
       const reading = await response.json();
       applyLiveReading(reading);
-      showToast(`Live reading inserted: ${reading.airPpm} ppm, ${reading.lux} lux.`);
+      showToast(`Live reading inserted: air ${reading.airRaw}, light ${reading.lightRaw} (10-bit ADC).`);
     } catch (error) {
       showToast(error.message);
     }
@@ -583,23 +718,30 @@ function bindEvents() {
 }
 
 function detectLiveEnvironmentNotifications(previousAir, previousLux) {
-  const airRise = state.air - previousAir;
-  const lightDrop = previousLux - state.lux;
-  const now = Date.now();
-  const cooldownElapsed = now - state.lastLiveNotificationAt >= 30000;
-  if (!cooldownElapsed) return;
+  const thresholds = state.thresholds;
+  const airHazard = state.air >= thresholds.airMinRaw;
+  const brightHazard = state.lux >= thresholds.harshLightMinRaw;
+  const dimHazard = state.lux <= thresholds.dimLightMaxRaw;
 
-  if (airRise >= INSIGHT_CONFIG.airRisePpm) {
+  if (airHazard) {
+    const airRise = state.air - previousAir;
     addLiveNotification(
       "warning",
-      "Air quality changed",
-      `CO₂-equivalent rose ${airRise} ppm, from ${previousAir} to ${state.air} ppm.`
+      "Bad air quality",
+      `Qualitative air reading is ${state.air}${airRise >= 0 ? `, up ${airRise} ADC units` : ""}; the threshold is ${thresholds.airMinRaw}/1023.`
     );
-  } else if (lightDrop >= 150 || (previousLux >= 200 && state.lux < 200)) {
+  }
+  if (brightHazard) {
     addLiveNotification(
       "warning",
-      "Light level dropped",
-      `Ambient light dropped ${lightDrop} lux, from ${previousLux} to ${state.lux} lux.`
+      "Harsh lighting",
+      `Ambient light reading is ${state.lux}; the threshold is ${thresholds.harshLightMinRaw}/1023.`
+    );
+  } else if (dimHazard) {
+    addLiveNotification(
+      "warning",
+      "Low-light hazard",
+      `Ambient light reading is ${state.lux}; the threshold is ${thresholds.dimLightMaxRaw}/1023 or lower.`
     );
   }
 }
@@ -613,7 +755,85 @@ function addLiveNotification(type, title, message) {
 
   state.notifications.unshift({ type, title, message });
   showToast(`${title} — ${message}`);
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body: message });
+  }
   if (state.route === "dashboard") render();
+}
+
+function recalculateLearningProfile() {
+  state.thresholds = calculatePersonalizedThresholds();
+  state.profileRecalculatedAt = new Date().toISOString();
+  generateGeminiCopy();
+  persist("circaair-sensitivity-profile", state.surveyCompleted ? state.sensitivityProfile : null);
+  persist("circaair-device-specs", state.deviceSpecs);
+  return state.thresholds;
+}
+
+function startWorkingSession() {
+  state.sessionId = `session-${Date.now()}`;
+  state.sessionStartedAt = new Date().toISOString();
+  state.sessionReadings = [];
+  state.sessionSymptoms = [];
+  recalculateLearningProfile();
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
+  }
+  if (state.profileRecalculationTimer) clearInterval(state.profileRecalculationTimer);
+  state.profileRecalculationTimer = setInterval(() => {
+    if (!state.working) return;
+    recalculateLearningProfile();
+  }, 60 * 60 * 1000);
+}
+
+async function stopWorkingSession() {
+  if (!state.sessionId) return;
+  const payload = {
+    sessionId: state.sessionId,
+    startedAt: state.sessionStartedAt,
+    endedAt: new Date().toISOString(),
+    readings: state.sessionReadings,
+    symptoms: state.sessionSymptoms,
+    thresholds: state.thresholds,
+    sensitivityProfile: state.surveyCompleted ? state.sensitivityProfile : null,
+    deviceSpecs: state.deviceSpecs,
+  };
+  state.sessionStore.unshift(payload);
+  state.sessionStore = state.sessionStore.slice(0, 20);
+  persist("circaair-sessions", state.sessionStore);
+
+  try {
+    await fetch("/api/session-data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    console.warn("Session upload unavailable; data remains in local storage.", error);
+  }
+  if (state.profileRecalculationTimer) {
+    clearInterval(state.profileRecalculationTimer);
+    state.profileRecalculationTimer = null;
+  }
+  state.sessionId = null;
+  state.sessionStartedAt = null;
+  state.sessionReadings = [];
+  state.sessionSymptoms = [];
+  loadUploadedSessionData();
+}
+
+async function loadUploadedSessionData() {
+  try {
+    const response = await fetch("/api/session-data", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (Array.isArray(payload.sessions) && payload.sessions.length) {
+      state.sessionStore = payload.sessions;
+      persist("circaair-sessions", state.sessionStore);
+    }
+  } catch (error) {
+    console.warn("Could not pull uploaded sessions.", error);
+  }
 }
 
 window.addEventListener("hashchange", () => {
@@ -623,18 +843,25 @@ window.addEventListener("hashchange", () => {
 function appendLiveReading(reading) {
   const previousAir = state.air;
   const previousLux = state.lux;
-  state.air = reading.airPpm;
-  state.lux = reading.lux;
+  state.air = reading.airRaw ?? reading.airPpm;
+  state.lux = reading.lightRaw ?? reading.lux;
   state.lastDataSync = reading.updatedAt || new Date().toISOString();
   state.environmentHistory.push({
     timestamp: state.lastDataSync,
-    airPpm: state.air,
-    lux: state.lux,
+    airRaw: state.air,
+    lightRaw: state.lux,
   });
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   state.environmentHistory = state.environmentHistory.filter(sample =>
     new Date(sample.timestamp).getTime() >= cutoff
   );
+  if (state.working) {
+    state.sessionReadings.push({
+      timestamp: state.lastDataSync,
+      airRaw: state.air,
+      lightRaw: state.lux,
+    });
+  }
   return { previousAir, previousLux };
 }
 
@@ -715,4 +942,5 @@ async function initializeAuth0() {
 }
 
 initializeAuth0();
+loadUploadedSessionData();
 
